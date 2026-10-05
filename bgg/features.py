@@ -1,13 +1,19 @@
 """Builds the table of game features the model looks up by game.
 
-Run as `python -m bgg.features --data-dir data` to write data/game_features.parquet,
-one row per game with item_id and float columns, no nulls.
+Run as `python -m bgg.features --data-dir data` to write, into the data directory:
+
+- game_features.parquet: one row per game with item_id and float columns, no nulls
+- game_creators.parquet: one row per game with item_id and the list of its
+  creator ids (designers, artists, and publishers share one numbering, from 1)
+- creators.parquet: what each creator id stands for
 """
 
 import argparse
 from pathlib import Path
 
 import polars as pl
+import torch
+from torch import Tensor
 
 # Straight from games.csv. Left out on purpose: AvgRating, BayesAvgRating,
 # StdDev and the Rank columns, which are computed from every user's ratings,
@@ -69,6 +75,82 @@ def build_game_features(data_dir: str | Path) -> pl.DataFrame:
     return features.with_columns(values.fill_null(values.median()))
 
 
+# long-tailed counts and durations, compressed with log(1 + x) before scaling
+LOG_COLUMNS = [
+    "NumOwned", "NumWant", "NumWish", "NumUserRatings", "NumAlternates",
+    "NumExpansions", "NumImplementations", "MfgPlaytime", "ComMinPlaytime",
+    "ComMaxPlaytime",
+]  # fmt: skip
+
+
+def load_game_tensors(
+    data_dir: str | Path, drop: tuple[str, ...] = (), max_creators: int = 32
+) -> tuple[pl.Series, Tensor, list[str], Tensor, int]:
+    """Reads the tables written by this module as tensors for a model.
+
+    Returns (item ids, features, feature names, creators, number of creator ids).
+    `features` is [games, features] with every non-flag column scaled to mean 0
+    and standard deviation 1. `creators` is [games, max_creators] creator ids,
+    padded with 0. Columns whose name starts with anything in `drop` are left
+    out, which is how a run without the player-count features is made.
+    """
+    data_dir = Path(data_dir)
+    table = pl.read_parquet(data_dir / "game_features.parquet")
+    names = [c for c in table.columns if c != "item_id" and not c.startswith(drop)]
+    scaled = []
+    for name in names:
+        column = table[name]
+        if name == "YearPublished":
+            # 0 means unknown, and a few ancient games are dated in the BCs
+            column = column.clip(1950, None)
+        if name in LOG_COLUMNS:
+            column = column.log1p()
+        if column.n_unique() > 2 and column.std() > 0:
+            column = (column - column.mean()) / column.std()
+        scaled.append(column.alias(name))
+    features = pl.DataFrame(scaled).to_torch(dtype=pl.Float32)
+
+    lists = pl.read_parquet(data_dir / "game_creators.parquet")["creators"]
+    creators = torch.zeros(len(lists), max_creators, dtype=torch.long)
+    for row, ids in enumerate(lists.list.head(max_creators).to_list()):
+        creators[row, : len(ids)] = torch.tensor(ids, dtype=torch.long)
+    n_creator_ids = pl.read_parquet(data_dir / "creators.parquet").height + 1
+    return table["item_id"], features, names, creators, n_creator_ids
+
+
+def build_game_creators(data_dir: str | Path) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Returns (creators per game, what each creator id stands for).
+
+    The source files have a 0/1 column per designer, artist, or publisher, with
+    the rare ones already folded into one "Low-Exp" column per kind. A game with
+    165 artists would be 165 ones in a row of 1,681 columns; a list of ids says
+    the same thing and is what an embedding layer wants.
+    """
+    data_dir = Path(data_dir)
+    credits = pl.concat(
+        pl.read_csv(data_dir / f"{kind}s_reduced.csv")
+        .unpivot(index="BGGId", variable_name="name")
+        .filter(pl.col("value") == 1)
+        .select(item_id="BGGId", kind=pl.lit(kind), name="name")
+        for kind in ("designer", "artist", "publisher")
+    )
+    vocabulary = (
+        credits.select("kind", "name").unique().sort("kind", "name")
+        # id 0 is left free to mean "no creator" when lists are padded
+        .with_row_index("creator_id", offset=1)
+    )
+    per_game = (
+        credits.join(vocabulary, on=["kind", "name"])
+        .group_by("item_id")
+        .agg(creators=pl.col("creator_id").sort())
+    )
+    games = pl.read_csv(data_dir / "games.csv", columns=["BGGId"]).select(item_id="BGGId")
+    per_game = games.join(per_game, on="item_id", how="left").with_columns(
+        pl.col("creators").fill_null([])
+    )
+    return per_game, vocabulary
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data")
@@ -78,3 +160,8 @@ if __name__ == "__main__":
     out = Path(args.data_dir) / "game_features.parquet"
     features.write_parquet(out)
     print(f"wrote {out}: {features.height:,} games, {features.width - 1} features")
+
+    per_game, vocabulary = build_game_creators(args.data_dir)
+    per_game.write_parquet(Path(args.data_dir) / "game_creators.parquet")
+    vocabulary.write_parquet(Path(args.data_dir) / "creators.parquet")
+    print(f"wrote game_creators.parquet and creators.parquet: {vocabulary.height:,} creators")

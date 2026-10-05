@@ -6,8 +6,10 @@ Run as `python -m bgg.evaluate --data-dir data` to print the baseline's score.
 import argparse
 
 import polars as pl
+import torch
 from scipy.stats import pearsonr
 
+from bgg.batches import RatingTable, evaluation_batches
 from bgg.data import load_ratings, split
 
 
@@ -28,6 +30,29 @@ def average_rating_predictions(train: pl.DataFrame, test: pl.DataFrame) -> pl.Da
     """
     means = train.group_by("item_id").agg(predicted=pl.col("rating").mean())
     return test.join(means, on="item_id", how="inner")
+
+
+@torch.no_grad()
+def score_model(
+    model: torch.nn.Module,
+    query: RatingTable,
+    test: RatingTable,
+    users_per_batch: int = 1024,
+    max_history: int = 1024,
+) -> dict[str, float]:
+    """R2 and mean absolute error (in rating points) over every test rating."""
+    model.eval()
+    predicted, actual = [], []
+    for batch in evaluation_batches(query, test, users_per_batch, max_history):
+        output = model(batch.history_items, batch.history_ratings, batch.history_mask, batch.target_items)
+        predicted.append(output[batch.target_mask].cpu())
+        actual.append(batch.target_ratings[batch.target_mask].cpu())
+    predicted, actual = torch.cat(predicted), torch.cat(actual)
+    return {
+        "r2": float(r_squared(predicted.numpy(), actual.numpy())),
+        "mae": float((predicted - actual).abs().mean()),
+        "ratings": len(actual),
+    }
 
 
 if __name__ == "__main__":

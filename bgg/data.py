@@ -18,6 +18,16 @@ def load_ratings(data_dir: str | Path) -> pl.DataFrame:
     )
 
 
+def query_test_split(
+    held_out: pl.DataFrame, seed: int = 42
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Divides each user's ratings 70/30 into a query set and a test set."""
+    query, test = train_test_split(
+        held_out, train_size=0.7, stratify=held_out["user_id"], random_state=seed
+    )
+    return query, test
+
+
 def split(
     ratings: pl.DataFrame, seed: int = 42
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
@@ -35,8 +45,19 @@ def split(
             ratings, groups=ratings["user_id"]
         )
     )
-    held_out = ratings[held_out_idx]
-    query, test = train_test_split(
-        held_out, train_size=0.7, stratify=held_out["user_id"], random_state=seed
-    )
+    query, test = query_test_split(ratings[held_out_idx], seed)
     return ratings[train_idx], query, test
+
+
+def hold_out_validation_users(
+    train: pl.DataFrame, share: float = 0.05, seed: int = 42
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Returns (train, validation query, validation test).
+
+    Takes a few users out of training to decide when to stop, so the test
+    users are only ever used for the final score.
+    """
+    users = train["user_id"].unique().sort().sample(fraction=share, seed=seed)
+    is_validation = pl.col("user_id").is_in(users.implode())
+    query, test = query_test_split(train.filter(is_validation), seed)
+    return train.filter(~is_validation), query, test

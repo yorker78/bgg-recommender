@@ -221,3 +221,6 @@ __marimo__/
 
 # datasets are downloaded, not committed
 data/
+
+# trained weights
+runs/
