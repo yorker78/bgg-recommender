@@ -224,3 +224,6 @@ data/
 
 # trained weights
 runs/
+
+# one line per training run, kept on the machine that trains
+results.jsonl
