@@ -113,6 +113,11 @@ def models_to_check():
     features = torch.zeros(20, 3)
     creators = torch.zeros(20, 4, dtype=torch.long)
     yield "recommender", lambda: Recommender(features, creators, 1, 6.0, use_ids=True, use_content=False, use_creators=False)
+    described = torch.randn(20, 3)
+    yield "recommender with content", lambda: Recommender(described, creators, 1, 6.0, use_ids=True, use_content=True, use_creators=False)
+    yield "recommender, content only", lambda: Recommender(described, creators, 1, 6.0, use_ids=False, use_content=True, use_creators=False)
+    credited = torch.randint(0, 5, (20, 4))  # 0 is "no creator"
+    yield "recommender with creators", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True)
 
 
 @pytest.mark.parametrize("name,make", list(models_to_check()))

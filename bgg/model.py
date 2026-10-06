@@ -15,13 +15,31 @@ class Recommender(nn.Module):
         self.use_ids = use_ids
         self.use_content = use_content
         self.use_creators = use_creators
-        self.game_embeddings = nn.Embedding(game_features.shape[0], GAME_EMBEDDING_SIZE)
-        nn.init.normal_(self.game_embeddings.weight, std=0.1)
+        if use_ids:
+            self.game_embeddings = nn.Embedding(game_features.shape[0], GAME_EMBEDDING_SIZE)
+            nn.init.normal_(self.game_embeddings.weight, std=0.1)
+        if use_content:
+            self.game_content = nn.Linear(self.game_features.shape[1], GAME_EMBEDDING_SIZE)
+            nn.init.normal_(self.game_content.weight, std=0.1)
+        if use_creators:
+            self.game_creators = nn.Embedding(n_creator_ids, GAME_EMBEDDING_SIZE)
+            nn.init.normal_(self.game_creators.weight, std=0.1)
         self.game_offset = nn.Embedding(game_features.shape[0], 1)
         nn.init.zeros_(self.game_offset.weight)
     
     def _for_games(self, items: Tensor) -> Tensor:
         return self.mean_rating + self.game_offset(items).squeeze(-1)
+    
+    def _game_vectors(self, items: Tensor) -> Tensor:
+        total = 0
+        if self.use_ids:
+            total = total + self.game_embeddings(items)
+        if self.use_content:
+            total = total + self.game_content(self.game_features[items])
+        if self.use_creators:
+            creator_mask = self.creators != 0
+            total = total + ((self.game_creators(self.creators) * creator_mask[:, :, None]).sum(1) / creator_mask.sum(1)[:, None].clamp(min=1))[items]
+        return total
     
     def forward(self,
                 history_items: Tensor,
@@ -29,12 +47,12 @@ class Recommender(nn.Module):
                 history_mask: Tensor,
                 target_items: Tensor) -> Tensor:
         
-        history_games = self.game_embeddings(history_items)
+        history_games = self._game_vectors(history_items)
         centered_ratings = (history_ratings - self._for_games(history_items)) * history_mask
         user_offset = centered_ratings.sum(1) / (history_mask.sum(1) + SHRINK)
         centered_games = history_games * centered_ratings[:, :, None]
         user_games = centered_games.sum(1) / history_mask.sum(1)[:, None].clamp(min=1)
-        target_games = self.game_embeddings(target_items)
+        target_games = self._game_vectors(target_items)
         pred_games = (user_games[:, None, :] * target_games).sum(-1)
         pred_ratings = self._for_games(target_items) + pred_games + user_offset[:, None]
         return pred_ratings
