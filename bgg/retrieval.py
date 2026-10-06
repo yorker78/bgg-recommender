@@ -38,6 +38,7 @@ def score_retrieval(
     max_users: int = 10_000,
     seed: int = 0,
     only: Tensor | None = None,
+    rating_counts: Tensor | None = None,
 ) -> dict[str, float]:
     """Averages over users who have at least one liked test game:
 
@@ -47,6 +48,15 @@ def score_retrieval(
       scaled so that 1.0 is the best possible top 10
 
     `only` is a true/false value per user; when given, just those users are scored.
+
+    With `rating_counts` (how many ratings each game has), three more numbers
+    say how adventurous the recommendations are. "Well known" means among the
+    100 most-rated games.
+
+    - beyond_hits@10: liked test games in the top 10 that are not well known,
+      the hits a list of popular games could never have made
+    - well_known@10: the share of all top 10 recommendations that are well known
+    - games_recommended: how many different games appear in anyone's top 10
     """
     model.eval()
     device = test.items.device
@@ -65,6 +75,11 @@ def score_retrieval(
     discount = 1 / torch.log2(torch.arange(2, 12, device=device).float())  # ranks 1 to 10
     best_dcg = discount.cumsum(0)
     totals = {"hits@10": 0.0, "recall@50": 0.0, "ndcg@10": 0.0}
+    if rating_counts is not None:
+        well_known = torch.zeros(n_games, dtype=torch.bool, device=device)
+        well_known[rating_counts.to(device).topk(min(100, n_games)).indices] = True
+        recommended = torch.zeros(n_games, dtype=torch.bool, device=device)
+        totals |= {"beyond_hits@10": 0.0, "well_known@10": 0.0}
     scored = 0
     for batch in users.split(users_per_batch):
         rows = torch.arange(len(batch), device=device)[:, None]
@@ -84,16 +99,28 @@ def score_retrieval(
         relevant[rows.expand_as(targets)[is_liked], targets[is_liked]] = True
         relevant &= ~excluded  # a few users rated the same game twice
 
-        hit = relevant.gather(1, scores.topk(wide).indices).float()
+        top = scores.topk(wide).indices
+        hit = relevant.gather(1, top).float()
         n_relevant = relevant.sum(1)
         keep = n_relevant > 0
         hit, n_relevant = hit[keep], n_relevant[keep]
+        if rating_counts is not None:
+            top10 = top[keep][:, :10]
+            # with very few games, a top 10 can reach down into the excluded ones
+            real = scores[keep].gather(1, top10).isfinite()
+            familiar = well_known[top10] & real
+            totals["beyond_hits@10"] += float((hit[:, :10] * ~familiar).sum())
+            totals["well_known@10"] += float((familiar.sum(1) / real.sum(1).clamp(min=1)).sum())
+            recommended[top10[real]] = True
         totals["hits@10"] += float(hit[:, :10].sum())
         totals["recall@50"] += float((hit.sum(1) / n_relevant).sum())
         dcg = (hit[:, :10] * discount[: hit[:, :10].shape[1]]).sum(1)
         totals["ndcg@10"] += float((dcg / best_dcg[n_relevant.clamp(max=10) - 1]).sum())
         scored += int(keep.sum())
-    return {name: total / scored for name, total in totals.items()} | {"users": scored}
+    result = {name: total / scored for name, total in totals.items()} | {"users": scored}
+    if rating_counts is not None:
+        result["games_recommended"] = int(recommended.sum())
+    return result
 
 
 def taste_variety(query: RatingTable, categories: Tensor, liked: float = 8.0, min_liked: int = 10) -> Tensor:
@@ -147,9 +174,9 @@ if __name__ == "__main__":
         drop = PLAYER_COUNT_FEATURES if getattr(settings, "drop_player_counts", False) else ()
         item_ids, features, _, creators, n_creator_ids = load_game_tensors(args.data_dir, drop)
         index = game_index(item_ids)
+        counts = index.join(train.group_by("item_id").len(), on="item_id", how="left").sort("item")["len"].fill_null(0).to_torch()
         if name == "popularity":
-            counts = index.join(train.group_by("item_id").len(), on="item_id", how="left").sort("item")["len"]
-            model = Popularity(counts.fill_null(0).to_torch())
+            model = Popularity(counts)
         else:
             model = build_model(settings, 0.0, features, creators, n_creator_ids)
             state = torch.load(Path("runs") / f"{name}.pt", map_location="cpu")
@@ -180,9 +207,15 @@ if __name__ == "__main__":
 
         for label, variant in variants.items():
             for group, only in groups.items():
-                result = score_retrieval(variant, query_table, test_table, len(item_ids), max_users=args.max_users, only=only)
+                result = score_retrieval(
+                    variant, query_table, test_table, len(item_ids),
+                    max_users=args.max_users, only=only, rating_counts=counts,
+                )
                 print(
                     f"{label}{group}: {result['hits@10']:.3f} liked games in the top 10, "
-                    f"recall@50 {result['recall@50']:.4f}, NDCG@10 {result['ndcg@10']:.4f} ({result['users']:,} users)",
+                    f"recall@50 {result['recall@50']:.4f}, NDCG@10 {result['ndcg@10']:.4f} ({result['users']:,} users)\n"
+                    f"    {result['beyond_hits@10']:.3f} of those hits are beyond the 100 best-known games, "
+                    f"{result['well_known@10']:.0%} of recommendations are among those 100, "
+                    f"{result['games_recommended']:,} different games recommended",
                     flush=True,
                 )

@@ -235,6 +235,14 @@ def test_retrieval_scores_a_known_ranking():
     expected = (1 / log2(torch.tensor(2.0)) + 1 / log2(torch.tensor(5.0))) / (1 / log2(torch.tensor(2.0)) + 1 / log2(torch.tensor(3.0)))
     assert result["ndcg@10"] == pytest.approx(float(expected))
 
+    # with only the 100 best-known games counted as well known, all six are, so nothing is beyond them
+    counted = score_retrieval(
+        Popularity(torch.arange(6)), to_table(query, index, users), to_table(test, index, users), n_games=6,
+        rating_counts=torch.arange(6),
+    )
+    assert counted["beyond_hits@10"] == 0 and counted["well_known@10"] == 1.0
+    assert counted["games_recommended"] == 5  # every game but the one in the history
+
 
 def learns_to_rank_the_toy_pattern(model, ratings, index, users, steps=200, lr=0.05) -> float:
     """Trains on the ranking objective, then asks for held-out users' unseen
