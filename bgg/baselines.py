@@ -40,3 +40,21 @@ class BiasModel(nn.Module):
             offset = surprise.sum(1) / (history_mask.sum(1) + self.SHRINK)
             predicted = predicted + offset[:, None]
         return predicted
+
+
+class Popularity(nn.Module):
+    """Scores every game by how many ratings it has, the same for every user.
+    Only meaningful for ranking: the scores are not ratings."""
+
+    def __init__(self, rating_counts: Tensor):
+        super().__init__()
+        self.register_buffer("counts", rating_counts.float())
+
+    def forward(
+        self,
+        history_items: Tensor,
+        history_ratings: Tensor,
+        history_mask: Tensor,
+        target_items: Tensor,
+    ) -> Tensor:
+        return self.counts[target_items]

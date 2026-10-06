@@ -100,6 +100,4 @@ class Recommender(nn.Module):
             glue_games = torch.cat(parts, dim=-1)
             net_games = self.head(glue_games).squeeze(-1)
             pred_ratings = pred_ratings + net_games
-        if not self.training:
-            pred_ratings = pred_ratings.clamp(1, 10)
         return pred_ratings

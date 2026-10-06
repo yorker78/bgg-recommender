@@ -190,17 +190,40 @@ def test_recommender_learns_the_toy_pattern(toy):
     assert learns_the_toy_pattern(model, *toy) < 0.5
 
 
-def test_recommender_keeps_predictions_on_the_rating_scale_outside_training():
-    model_module = pytest.importorskip("bgg.model")
-    model = model_module.Recommender(
-        torch.randn(20, 3) * 50, torch.zeros(20, 4, dtype=torch.long), 1, 6.0,
-        use_ids=False, use_content=True, use_creators=False,
+def test_score_model_keeps_predictions_on_the_rating_scale():
+    """Predictions of -94, 6 and 106 are scored as 1, 6 and 10."""
+    model = BiasModel(3, 6.0)
+    model.game_offset.weight.data = torch.tensor([[-100.0], [0.0], [100.0]])
+    index = game_index(pl.Series([0, 1, 2]))
+    users = pl.Series(["a"])
+    query = pl.DataFrame({"user_id": ["a"], "item_id": [0], "rating": [5.0]})
+    test = pl.DataFrame({"user_id": ["a"] * 3, "item_id": [0, 1, 2], "rating": [1.0, 6.0, 10.0]})
+    scores = score_model(model, to_table(query, index, users), to_table(test, index, users))
+    assert scores["mae"] == 0
+
+
+def test_retrieval_scores_a_known_ranking():
+    """Six games ranked 5, 4, 3, 2, 1, 0 for everyone. The user's history is
+    game 5, so their top recommendations are 4, 3, 2, 1, 0. They went on to
+    like games 4 and 1 and to dislike game 3."""
+    from bgg.baselines import Popularity
+    from bgg.retrieval import score_retrieval
+
+    index = game_index(pl.Series([0, 1, 2, 3, 4, 5]))
+    users = pl.Series(["a", "b"])
+    query = pl.DataFrame({"user_id": ["a", "b"], "item_id": [5, 5], "rating": [7.0, 7.0]})
+    test = pl.DataFrame({
+        "user_id": ["a", "a", "a", "b"],  # b likes nothing in test, so is not scored
+        "item_id": [4, 1, 3, 4],
+        "rating": [9.0, 8.0, 2.0, 5.0],
+    })
+    result = score_retrieval(
+        Popularity(torch.arange(6)), to_table(query, index, users), to_table(test, index, users), n_games=6
     )
-    torch.nn.init.normal_(model.game_content.weight, std=5)  # absurd weights, absurd predictions
-    batch = (torch.randint(0, 20, (4, 6)), torch.rand(4, 6) * 10, torch.ones(4, 6, dtype=torch.bool), torch.randint(0, 20, (4, 5)))
-    with torch.no_grad():
-        scored = model.eval()(*batch)
-        training = model.train()(*batch)
-    assert scored.min() >= 1 and scored.max() <= 10
-    # left alone while training, so an out-of-range prediction still gets a gradient
-    assert training.min() < 1 or training.max() > 10
+    assert result["users"] == 1
+    assert result["hits@10"] == 2
+    assert result["recall@50"] == 1.0
+    # hits at ranks 1 and 4, against the best case of ranks 1 and 2
+    log2 = torch.log2
+    expected = (1 / log2(torch.tensor(2.0)) + 1 / log2(torch.tensor(5.0))) / (1 / log2(torch.tensor(2.0)) + 1 / log2(torch.tensor(3.0)))
+    assert result["ndcg@10"] == pytest.approx(float(expected))

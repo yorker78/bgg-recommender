@@ -49,7 +49,9 @@ def score_model(
         output = model(batch.history_items, batch.history_ratings, batch.history_mask, batch.target_items)
         predicted.append(output[batch.target_mask].cpu())
         actual.append(batch.target_ratings[batch.target_mask].cpu())
-    predicted, actual = torch.cat(predicted), torch.cat(actual)
+    # a rating off the 1 to 10 scale is never right, and the R2 used here is
+    # badly thrown by the occasional wild prediction
+    predicted, actual = torch.cat(predicted).clamp(1, 10), torch.cat(actual)
     return {
         "r2": float(r_squared(predicted.numpy(), actual.numpy())),
         "mae": float((predicted - actual).abs().mean()),
