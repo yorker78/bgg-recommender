@@ -96,11 +96,12 @@ def score_retrieval(
     return {name: total / scored for name, total in totals.items()} | {"users": scored}
 
 
-def taste_variety(query: RatingTable, categories: Tensor, liked: float = 8.0) -> Tensor:
+def taste_variety(query: RatingTable, categories: Tensor, liked: float = 8.0, min_liked: int = 10) -> Tensor:
     """How spread out each user's liked games are across BoardGameGeek's
     categories (strategy, war, party, family and so on), from their query
     ratings: 0 when every liked game is in one category, higher the more evenly
-    they are spread. NaN for a user with no liked game in any category.
+    they are spread. NaN for a user with fewer than `min_liked` liked games,
+    since a user with two liked games looks focused only for lack of evidence.
 
     `categories` is [games, categories] of 0s and 1s. This is the entropy of
     the user's share of liked games per category.
@@ -110,7 +111,9 @@ def taste_variety(query: RatingTable, categories: Tensor, liked: float = 8.0) ->
     counts = torch.zeros(len(query.counts), categories.shape[1], device=query.items.device)
     counts.index_add_(0, user_of[is_liked], categories[query.items[is_liked]].float())
     share = counts / counts.sum(1, keepdim=True)
-    return -(share * torch.log(share.clamp(min=1e-12))).sum(1)
+    variety = -(share * torch.log(share.clamp(min=1e-12))).sum(1)
+    n_liked = torch.zeros(len(query.counts), device=query.items.device).index_add_(0, user_of[is_liked], torch.ones_like(user_of[is_liked], dtype=torch.float))
+    return torch.where((n_liked >= min_liked) & (counts.sum(1) > 0), variety, torch.nan)
 
 
 if __name__ == "__main__":
@@ -169,7 +172,11 @@ if __name__ == "__main__":
             is_category = [n.startswith("Cat:") for n in names]
             variety = taste_variety(query_table, raw[:, is_category].to(device))
             low, high = variety[~variety.isnan()].quantile(torch.tensor([1 / 3, 2 / 3], device=device))
-            groups |= {" (focused tastes)": variety <= low, " (varied tastes)": variety >= high}
+            groups |= {
+                " (enough history to tell)": ~variety.isnan(),
+                " (focused tastes)": variety <= low,
+                " (varied tastes)": variety >= high,
+            }
 
         for label, variant in variants.items():
             for group, only in groups.items():

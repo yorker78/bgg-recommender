@@ -285,7 +285,8 @@ def test_taste_variety_and_scoring_a_chosen_group():
         "item_id": [0, 1, 2, 0, 2],
         "rating": [9.0, 8.0, 3.0, 9.0, 9.0],  # a's party game is disliked, so it doesn't count
     }), index, users)
-    variety = taste_variety(query, categories)
+    variety = taste_variety(query, categories, min_liked=2)
+    assert taste_variety(query, categories, min_liked=3).isnan().all()  # neither has three liked games
     assert variety[0] == 0
     assert variety[1] == pytest.approx(float(torch.log(torch.tensor(2.0))))
 
