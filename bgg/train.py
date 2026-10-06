@@ -38,6 +38,7 @@ def build_model(args, train_mean: float, features, creators, n_creator_ids) -> t
         use_content=args.use_content,
         use_creators=args.use_creators,
         use_seen=args.use_seen,
+        use_context=args.use_context,
         embedding_size=args.embedding_size,
         hidden_sizes=tuple(args.hidden_sizes),
     )
@@ -130,6 +131,7 @@ if __name__ == "__main__":
     parser.add_argument("--use-content", action="store_true")
     parser.add_argument("--use-creators", action="store_true")
     parser.add_argument("--use-seen", action="store_true")
+    parser.add_argument("--use-context", action="store_true")
     parser.add_argument("--drop-player-counts", action="store_true")
     parser.add_argument("--embedding-size", type=int, default=32)
     parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[])

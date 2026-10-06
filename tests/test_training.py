@@ -120,6 +120,7 @@ def models_to_check():
     yield "recommender with creators", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True)
     yield "recommender with a head", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True, hidden_sizes=(16, 8))
     yield "recommender with a head and seen", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True, use_seen=True, hidden_sizes=(16,))
+    yield "recommender with a head, seen, and context", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True, use_seen=True, use_context=True, hidden_sizes=(16,))
 
 
 @pytest.mark.parametrize("name,make", list(models_to_check()))

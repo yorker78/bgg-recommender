@@ -5,7 +5,7 @@ SHRINK = 5
 
 class Recommender(nn.Module):
     def __init__(self, game_features: Tensor, creators: Tensor, n_creator_ids: int, mean_rating: float, *,
-                 use_ids: bool, use_content: bool, use_creators: bool, use_seen: bool = False, embedding_size: int = 32, hidden_sizes: tuple[int, ...] = ()):
+                 use_ids: bool, use_content: bool, use_creators: bool, use_seen: bool = False, use_context: bool = False, embedding_size: int = 32, hidden_sizes: tuple[int, ...] = ()):
         super().__init__()
         self.register_buffer("game_features", game_features)
         self.register_buffer("creators", creators)
@@ -15,6 +15,7 @@ class Recommender(nn.Module):
         self.use_content = use_content
         self.use_creators = use_creators
         self.use_seen = use_seen
+        self.use_context = use_context
         self.hidden_sizes = hidden_sizes
         if use_ids:
             self.game_embeddings = nn.Embedding(game_features.shape[0], embedding_size)
@@ -31,6 +32,8 @@ class Recommender(nn.Module):
             size_in = 3 * embedding_size
             if use_seen:
                 size_in += 2 * embedding_size
+            if use_context:
+                size_in += 2
             for size in hidden_sizes:
                 layers += [nn.Linear(size_in, size), nn.ReLU()]
                 size_in = size
@@ -80,6 +83,10 @@ class Recommender(nn.Module):
                 seen_per_target = seen_games[:, None, :].expand(-1, target_items.shape[1], -1)
                 seen_targets = seen_per_target * target_games
                 parts += [seen_per_target, seen_targets]
+            if self.use_context:
+                history_length = torch.log1p(history_mask.sum(1).float())[:, None, None].expand(-1, target_items.shape[1], 1)
+                expanded_user_offset = user_offset[:, None, None].expand(-1, target_items.shape[1], 1)
+                parts += [history_length, expanded_user_offset]
             glue_games = torch.cat(parts, dim=-1)
             net_games = self.head(glue_games).squeeze(-1)
             pred_ratings = pred_ratings + net_games
