@@ -186,3 +186,19 @@ def test_recommender_learns_the_toy_pattern(toy):
         use_ids=True, use_content=False, use_creators=False,
     )
     assert learns_the_toy_pattern(model, *toy) < 0.5
+
+
+def test_recommender_keeps_predictions_on_the_rating_scale_outside_training():
+    model_module = pytest.importorskip("bgg.model")
+    model = model_module.Recommender(
+        torch.randn(20, 3) * 50, torch.zeros(20, 4, dtype=torch.long), 1, 6.0,
+        use_ids=False, use_content=True, use_creators=False,
+    )
+    torch.nn.init.normal_(model.game_content.weight, std=5)  # absurd weights, absurd predictions
+    batch = (torch.randint(0, 20, (4, 6)), torch.rand(4, 6) * 10, torch.ones(4, 6, dtype=torch.bool), torch.randint(0, 20, (4, 5)))
+    with torch.no_grad():
+        scored = model.eval()(*batch)
+        training = model.train()(*batch)
+    assert scored.min() >= 1 and scored.max() <= 10
+    # left alone while training, so an out-of-range prediction still gets a gradient
+    assert training.min() < 1 or training.max() > 10
