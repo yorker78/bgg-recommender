@@ -153,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--max-users", type=int, default=10_000)
     parser.add_argument("--cluster", nargs="*", default=[], metavar="METHOD[:K]",
-                        help="also score each model with one ideal vector per taste cluster, e.g. kmeans:2 hdbscan")
+                        help="also score each model with one ideal vector per taste cluster, e.g. kmeans:2 kmeans-auto agglomerative hdbscan dbscan categories")
     parser.add_argument("--by-taste", action="store_true",
                         help="also report users with the most focused and most varied tastes separately")
     args = parser.parse_args()
@@ -186,18 +186,22 @@ if __name__ == "__main__":
         query_table, test_table = (to_table(part, index, users).to(device) for part in (query, test))
         model.to(device)
 
+        # BoardGameGeek's own categories: strategy, war, party, family and so on
+        _, raw, names, _, _ = load_game_tensors(args.data_dir)
+        categories = raw[:, [n.startswith("Cat:") for n in names]].long().to(device)
+
         variants = {name: model}
         for spec in args.cluster:
             from bgg.multi_interest import MultiInterest
 
             method, _, k = spec.partition(":")
-            variants[f"{name} + {spec}"] = MultiInterest(model, method=method, n_clusters=int(k or 2))
+            variants[f"{name} + {spec}"] = MultiInterest(
+                model, method=method, n_clusters=int(k or 2), categories=categories
+            ).to(device)
 
         groups = {"": None}
         if args.by_taste:
-            _, raw, names, _, _ = load_game_tensors(args.data_dir)
-            is_category = [n.startswith("Cat:") for n in names]
-            variety = taste_variety(query_table, raw[:, is_category].to(device))
+            variety = taste_variety(query_table, categories)
             low, high = variety[~variety.isnan()].quantile(torch.tensor([1 / 3, 2 / 3], device=device))
             groups |= {
                 " (enough history to tell)": ~variety.isnan(),

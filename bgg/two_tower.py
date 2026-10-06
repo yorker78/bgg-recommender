@@ -1,6 +1,7 @@
 import torch
 from torch import Tensor, nn
 
+
 class TwoTower(nn.Module):
     def __init__(self,
                  game_features: Tensor,

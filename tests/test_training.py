@@ -302,3 +302,44 @@ def test_taste_variety_and_scoring_a_chosen_group():
     from bgg.baselines import Popularity
     result = score_retrieval(Popularity(torch.arange(4)), query, test, n_games=4, only=variety > 0)
     assert result["users"] == 1
+
+
+@pytest.mark.parametrize("method", ["kmeans", "kmeans-auto", "dbscan", "hdbscan", "agglomerative", "categories"])
+def test_multi_interest_scores_like_the_model_it_wraps_when_it_cannot_split(method):
+    """One ideal game per taste cluster. Users 0 and 1 have nothing to split
+    (no history, and too short a history), so they must come out as the
+    wrapped model would score them."""
+    two_tower = pytest.importorskip("bgg.two_tower")
+    multi_interest = pytest.importorskip("bgg.multi_interest")
+    torch.manual_seed(0)
+    n_games = 60
+    categories = torch.zeros(n_games, 3, dtype=torch.long)
+    categories[:20, 0], categories[20:40, 1] = 1, 1  # the last 20 games have no category
+    model = two_tower.TwoTower(torch.randn(n_games, 6), 6.0, embedding_size=8, hidden_size=16, cosine=True).eval()
+    wrapped = multi_interest.MultiInterest(model, method=method, categories=categories).eval()
+
+    items = torch.stack([torch.randperm(n_games)[:30] for _ in range(4)])
+    ratings = torch.rand(4, 30) * 10
+    mask = torch.ones(4, 30, dtype=torch.bool)
+    mask[0] = False
+    mask[1, 6:] = False
+    targets = torch.randint(0, n_games, (4, 12))
+    with torch.no_grad():
+        plain = model(items, ratings, mask, targets)
+        scores = wrapped(items, ratings, mask, targets)
+        items[1, 6:], ratings[1, 6:] = 0, 10.0  # padding must not matter
+        again = wrapped(items, ratings, mask, targets)
+    assert scores.shape == (4, 12) and torch.isfinite(scores).all()
+    assert torch.allclose(scores, again, atol=1e-5)
+    assert torch.allclose(scores[0], plain[0], atol=1e-5)
+    # cosine similarity, which is the wrapped model's score before its temperature
+    assert torch.allclose(scores[1], plain[1] / model.temperature, atol=1e-5)
+
+
+def test_multi_interest_rejects_an_unknown_method():
+    two_tower = pytest.importorskip("bgg.two_tower")
+    multi_interest = pytest.importorskip("bgg.multi_interest")
+    model = two_tower.TwoTower(torch.randn(30, 6), 6.0, embedding_size=8, hidden_size=16, cosine=True)
+    wrapped = multi_interest.MultiInterest(model, method="kmean")
+    with pytest.raises(Exception, match="undefined method"):
+        wrapped(torch.arange(30)[None], torch.rand(1, 30) * 10, torch.ones(1, 30, dtype=torch.bool), torch.arange(5)[None])
