@@ -37,7 +37,9 @@ def score_model(
     model: torch.nn.Module,
     query: RatingTable,
     test: RatingTable,
-    users_per_batch: int = 1024,
+    # small, because a model with attention builds a [users, targets, history]
+    # tensor and one user can have over a thousand of each
+    users_per_batch: int = 64,
     max_history: int = 1024,
 ) -> dict[str, float]:
     """R2 and mean absolute error (in rating points) over every test rating."""

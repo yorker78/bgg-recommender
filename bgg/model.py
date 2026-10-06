@@ -5,7 +5,7 @@ SHRINK = 5
 
 class Recommender(nn.Module):
     def __init__(self, game_features: Tensor, creators: Tensor, n_creator_ids: int, mean_rating: float, *,
-                 use_ids: bool, use_content: bool, use_creators: bool, use_seen: bool = False, use_context: bool = False, embedding_size: int = 32, hidden_sizes: tuple[int, ...] = ()):
+                 use_ids: bool, use_content: bool, use_creators: bool, use_seen: bool = False, use_context: bool = False, use_attention: bool = False, embedding_size: int = 32, hidden_sizes: tuple[int, ...] = ()):
         super().__init__()
         self.register_buffer("game_features", game_features)
         self.register_buffer("creators", creators)
@@ -16,6 +16,7 @@ class Recommender(nn.Module):
         self.use_creators = use_creators
         self.use_seen = use_seen
         self.use_context = use_context
+        self.use_attention = use_attention
         self.hidden_sizes = hidden_sizes
         if use_ids:
             self.game_embeddings = nn.Embedding(game_features.shape[0], embedding_size)
@@ -27,6 +28,8 @@ class Recommender(nn.Module):
             self.game_creators = nn.Embedding(n_creator_ids, embedding_size)
             nn.init.normal_(self.game_creators.weight, std=0.1)
             self.register_buffer("creator_mask", self.creators != 0)
+        if use_attention:
+            self.attention_scale = nn.Parameter(torch.zeros(()))
         if hidden_sizes:
             layers = []
             size_in = 3 * embedding_size
@@ -71,10 +74,17 @@ class Recommender(nn.Module):
         centered_games = history_games * centered_ratings[:, :, None]
         user_games = centered_games.sum(1) / history_mask.sum(1)[:, None].clamp(min=1)
         target_games = self._game_vectors(target_items)
-        pred_games = (user_games[:, None, :] * target_games).sum(-1)
+        if self.use_attention:
+            scores = target_games @ history_games.transpose(1, 2)
+            scaled_scores = scores * self.attention_scale
+            masked_scores = scaled_scores.masked_fill(~history_mask[:, None, :], float("-inf"))
+            weights = torch.softmax(masked_scores, dim=-1).nan_to_num(0.0)
+            user_per_target = weights @ centered_games
+        else:
+            user_per_target = user_games[:, None, :].expand(-1, target_items.shape[1], -1)
+        pred_games = (user_per_target * target_games).sum(-1)
         pred_ratings = self._for_games(target_items) + pred_games + user_offset[:, None]
         if self.hidden_sizes:
-            user_per_target = user_games[:, None, :].expand(-1, target_items.shape[1], -1)
             user_targets = user_per_target * target_games
             parts = [user_per_target, target_games, user_targets]
             if self.use_seen:
