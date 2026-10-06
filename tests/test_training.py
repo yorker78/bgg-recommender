@@ -413,3 +413,25 @@ def test_description_columns_are_only_loaded_when_asked_for(tmp_path):
     _, features, names, _, _ = load_game_tensors(tmp_path, descriptions=True)
     assert names == ["GameWeight", "Desc0", mechanic] and features.shape == (3, 3)
     assert load_game_tensors(tmp_path, ratios=True)[2] == ["GameWeight", "RatioScarcityHype", mechanic]
+
+
+def test_ranking_loss_draws_negatives_by_weight():
+    """With all the weight on game 7, every negative is game 7."""
+    from bgg.batches import Batch
+
+    seen = []
+
+    class Recorder(torch.nn.Module):
+        def forward(self, history_items, history_ratings, history_mask, target_items):
+            seen.append(target_items)
+            return torch.zeros(target_items.shape, requires_grad=True)
+
+    batch = Batch(
+        torch.zeros(3, 2, dtype=torch.long), torch.zeros(3, 2), torch.ones(3, 2, dtype=torch.bool),
+        torch.tensor([[1], [2], [3]]), torch.tensor([[9.0], [2.0], [8.0]]), torch.ones(3, 1, dtype=torch.bool),
+    )
+    weights = torch.zeros(20)
+    weights[7] = 1.0
+    loss = ranking_loss(Recorder(), batch, n_games=20, n_negatives=5, generator=torch.Generator().manual_seed(0), weights=weights)
+    assert torch.isfinite(loss)
+    assert seen[0][:, 0].tolist() == [1, 2, 3] and (seen[0][:, 1:] == 7).all()

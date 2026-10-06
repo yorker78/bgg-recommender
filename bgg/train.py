@@ -68,16 +68,25 @@ def build_model(args, train_mean: float, features, creators, n_creator_ids) -> t
     )
 
 
-def ranking_loss(model, batch, n_games: int, n_negatives: int, generator, liked: float = 8.0):
+def ranking_loss(model, batch, n_games: int, n_negatives: int, generator, liked: float = 8.0, weights=None):
     """Teaches a model to rank: each user's targets are scored alongside games
     drawn at random, and the model is pushed to score the targets they liked
     (rated `liked` or more) high and everything else low.
 
     The random games are almost always ones the user never rated. A few will
     be games they did, which is rare enough among 22,000 not to matter.
+
+    By default every game is equally likely to be drawn, so most draws are
+    obscure and "prefer well-known games" is an easy way to score well. With
+    `weights` (one per game), games are drawn in proportion to them. Weighting
+    by popularity makes well-known games turn up as examples of what a user
+    did not like, and takes that shortcut away.
     """
     n_users = len(batch.target_items)
-    negatives = torch.randint(n_games, (n_users, n_negatives), generator=generator, device=batch.target_items.device)
+    if weights is None:
+        negatives = torch.randint(n_games, (n_users, n_negatives), generator=generator, device=batch.target_items.device)
+    else:
+        negatives = torch.multinomial(weights, n_users * n_negatives, replacement=True, generator=generator).view(n_users, n_negatives)
     scores = model(
         batch.history_items, batch.history_ratings, batch.history_mask, torch.cat([batch.target_items, negatives], dim=1)
     )
@@ -134,6 +143,10 @@ def main(args) -> dict:
     weights.parent.mkdir(exist_ok=True)
 
     ranking = args.objective == "ranking"
+    negative_weights = None
+    if ranking and args.negative_popularity:
+        counts = torch.bincount(train_table.items, minlength=features.shape[0]).float()
+        negative_weights = (counts + 1) ** args.negative_popularity
     key = "ndcg@10" if ranking else "r2"
 
     def evaluate(tables, **options):
@@ -154,7 +167,7 @@ def main(args) -> dict:
             train_table, args.users_per_batch, args.max_history, args.max_targets, generator
         ):
             if ranking:
-                loss = ranking_loss(model, batch, features.shape[0], args.negatives, generator)
+                loss = ranking_loss(model, batch, features.shape[0], args.negatives, generator, weights=negative_weights)
                 if args.diversity:
                     loss = loss + args.diversity * interest_overlap(model, batch)
             else:
@@ -217,6 +230,8 @@ if __name__ == "__main__":
     # training
     parser.add_argument("--objective", choices=["rating", "ranking"], default="rating")
     parser.add_argument("--negatives", type=int, default=256)
+    parser.add_argument("--negative-popularity", type=float, default=0.0,
+                        help="draw negatives in proportion to (ratings + 1) to this power; 0 is uniform, 1 is by popularity")
     parser.add_argument("--diversity", type=float, default=0.0,
                         help="for multi-tower: how hard to push a user's ideal games apart")
     parser.add_argument("--epochs", type=int, default=40)
