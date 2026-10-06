@@ -8,7 +8,7 @@ import torch
 from bgg.baselines import BiasModel
 from bgg.batches import evaluation_batches, game_index, to_table, training_batches
 from bgg.evaluate import average_rating_predictions, r_squared, score_model
-from bgg.retrieval import score_retrieval
+from bgg.retrieval import score_retrieval, taste_variety
 from bgg.train import ranking_loss
 
 
@@ -273,3 +273,23 @@ def test_two_tower_learns_to_rank_the_toy_pattern(toy, cosine):
     torch.manual_seed(0)
     model = two_tower.TwoTower(torch.eye(20), 6.0, embedding_size=8, hidden_size=16, cosine=cosine)
     assert learns_to_rank_the_toy_pattern(model, *toy, lr=0.01) > 0.95
+
+
+def test_taste_variety_and_scoring_a_chosen_group():
+    """User a likes two war games; user b likes one war game and one party game."""
+    index = game_index(pl.Series([0, 1, 2, 3]))
+    users = pl.Series(["a", "b"])
+    categories = torch.tensor([[1, 0], [1, 0], [0, 1], [0, 0]])  # games 0 and 1 are war, 2 is party
+    query = to_table(pl.DataFrame({
+        "user_id": ["a", "a", "a", "b", "b"],
+        "item_id": [0, 1, 2, 0, 2],
+        "rating": [9.0, 8.0, 3.0, 9.0, 9.0],  # a's party game is disliked, so it doesn't count
+    }), index, users)
+    variety = taste_variety(query, categories)
+    assert variety[0] == 0
+    assert variety[1] == pytest.approx(float(torch.log(torch.tensor(2.0))))
+
+    test = to_table(pl.DataFrame({"user_id": ["a", "b"], "item_id": [3, 3], "rating": [9.0, 9.0]}), index, users)
+    from bgg.baselines import Popularity
+    result = score_retrieval(Popularity(torch.arange(4)), query, test, n_games=4, only=variety > 0)
+    assert result["users"] == 1

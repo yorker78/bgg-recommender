@@ -1,6 +1,7 @@
 """Scoring a model as a recommender rather than as a rating predictor.
 
     python -m bgg.retrieval popularity game-averages content-head64-seen
+    python -m bgg.retrieval two-tower-cosine --cluster kmeans:2 hdbscan --by-taste
 
 For each held-out user the model is given their query ratings and ranks every
 game that is not among them. It is scored on where the games the user went on
@@ -15,6 +16,7 @@ import json
 from pathlib import Path
 
 import torch
+from torch import Tensor
 
 from bgg.baselines import Popularity
 from bgg.batches import RatingTable, _gather, game_index, to_table
@@ -35,6 +37,7 @@ def score_retrieval(
     # if differences between models get smaller than the sampling noise
     max_users: int = 10_000,
     seed: int = 0,
+    only: Tensor | None = None,
 ) -> dict[str, float]:
     """Averages over users who have at least one liked test game:
 
@@ -42,12 +45,16 @@ def score_retrieval(
     - recall@50: the share of their liked test games found in the top 50
     - ndcg@10: like hits@10, but a hit counts for more the higher it is ranked,
       scaled so that 1.0 is the best possible top 10
+
+    `only` is a true/false value per user; when given, just those users are scored.
     """
     model.eval()
     device = test.items.device
     user_of = torch.repeat_interleave(torch.arange(len(test.counts), device=device), test.counts)
     has_liked = torch.zeros(len(test.counts), dtype=torch.bool, device=device)
     has_liked[user_of[test.ratings >= liked]] = True
+    if only is not None:
+        has_liked &= only
     users = has_liked.nonzero().squeeze(1)
     if len(users) > max_users:
         pick = torch.randperm(len(users), generator=torch.Generator().manual_seed(seed))[:max_users]
@@ -89,6 +96,23 @@ def score_retrieval(
     return {name: total / scored for name, total in totals.items()} | {"users": scored}
 
 
+def taste_variety(query: RatingTable, categories: Tensor, liked: float = 8.0) -> Tensor:
+    """How spread out each user's liked games are across BoardGameGeek's
+    categories (strategy, war, party, family and so on), from their query
+    ratings: 0 when every liked game is in one category, higher the more evenly
+    they are spread. NaN for a user with no liked game in any category.
+
+    `categories` is [games, categories] of 0s and 1s. This is the entropy of
+    the user's share of liked games per category.
+    """
+    user_of = torch.repeat_interleave(torch.arange(len(query.counts), device=query.items.device), query.counts)
+    is_liked = query.ratings >= liked
+    counts = torch.zeros(len(query.counts), categories.shape[1], device=query.items.device)
+    counts.index_add_(0, user_of[is_liked], categories[query.items[is_liked]].float())
+    share = counts / counts.sum(1, keepdim=True)
+    return -(share * torch.log(share.clamp(min=1e-12))).sum(1)
+
+
 if __name__ == "__main__":
     # imported here because bgg.train uses score_retrieval
     from bgg.train import PLAYER_COUNT_FEATURES, build_model
@@ -98,6 +122,10 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--max-users", type=int, default=10_000)
+    parser.add_argument("--cluster", nargs="*", default=[], metavar="METHOD[:K]",
+                        help="also score each model with one ideal vector per taste cluster, e.g. kmeans:2 hdbscan")
+    parser.add_argument("--by-taste", action="store_true",
+                        help="also report users with the most focused and most varied tastes separately")
     args = parser.parse_args()
     device = torch.device(args.device)
 
@@ -125,10 +153,29 @@ if __name__ == "__main__":
             # strict=False: older runs predate the creator_mask buffer, which is rebuilt anyway
             problems = model.load_state_dict(state, strict=False)
             assert not problems.unexpected_keys and set(problems.missing_keys) <= {"creator_mask"}, problems
-        tables = (to_table(part, index, users).to(device) for part in (query, test))
-        result = score_retrieval(model.to(device), *tables, len(item_ids), max_users=args.max_users)
-        print(
-            f"{name}: {result['hits@10']:.3f} liked games in the top 10, "
-            f"recall@50 {result['recall@50']:.4f}, NDCG@10 {result['ndcg@10']:.4f} ({result['users']:,} users)",
-            flush=True,
-        )
+        query_table, test_table = (to_table(part, index, users).to(device) for part in (query, test))
+        model.to(device)
+
+        variants = {name: model}
+        for spec in args.cluster:
+            from bgg.multi_interest import MultiInterest
+
+            method, _, k = spec.partition(":")
+            variants[f"{name} + {spec}"] = MultiInterest(model, method=method, n_clusters=int(k or 2))
+
+        groups = {"": None}
+        if args.by_taste:
+            _, raw, names, _, _ = load_game_tensors(args.data_dir)
+            is_category = [n.startswith("Cat:") for n in names]
+            variety = taste_variety(query_table, raw[:, is_category].to(device))
+            low, high = variety[~variety.isnan()].quantile(torch.tensor([1 / 3, 2 / 3], device=device))
+            groups |= {" (focused tastes)": variety <= low, " (varied tastes)": variety >= high}
+
+        for label, variant in variants.items():
+            for group, only in groups.items():
+                result = score_retrieval(variant, query_table, test_table, len(item_ids), max_users=args.max_users, only=only)
+                print(
+                    f"{label}{group}: {result['hits@10']:.3f} liked games in the top 10, "
+                    f"recall@50 {result['recall@50']:.4f}, NDCG@10 {result['ndcg@10']:.4f} ({result['users']:,} users)",
+                    flush=True,
+                )
