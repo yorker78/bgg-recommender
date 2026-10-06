@@ -125,6 +125,12 @@ def models_to_check():
     yield "recommender with a head, seen, and context", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True, use_seen=True, use_context=True, hidden_sizes=(16,))
     yield "recommender with attention and no head", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True, use_attention=True)
     yield "recommender with everything on", lambda: Recommender(described, credited, 5, 6.0, use_ids=True, use_content=True, use_creators=True, use_seen=True, use_context=True, use_attention=True, hidden_sizes=(16,))
+    try:
+        from bgg.two_tower import TwoTower
+    except ImportError:
+        return
+    yield "two tower", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16)
+    yield "two tower, cosine", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16, cosine=True)
 
 
 @pytest.mark.parametrize("name,make", list(models_to_check()))
@@ -258,3 +264,12 @@ def test_recommender_learns_to_rank_the_toy_pattern(toy):
         use_ids=True, use_content=False, use_creators=False,
     )
     assert learns_to_rank_the_toy_pattern(model, *toy) > 0.95
+
+
+@pytest.mark.parametrize("cosine", [False, True])
+def test_two_tower_learns_to_rank_the_toy_pattern(toy, cosine):
+    """It only sees content, so each toy game gets a feature of its own."""
+    two_tower = pytest.importorskip("bgg.two_tower")
+    torch.manual_seed(0)
+    model = two_tower.TwoTower(torch.eye(20), 6.0, embedding_size=8, hidden_size=16, cosine=cosine)
+    assert learns_to_rank_the_toy_pattern(model, *toy, lr=0.01) > 0.95
