@@ -9,7 +9,7 @@ from bgg.baselines import BiasModel
 from bgg.batches import evaluation_batches, game_index, to_table, training_batches
 from bgg.evaluate import average_rating_predictions, r_squared, score_model
 from bgg.retrieval import score_retrieval, taste_variety
-from bgg.train import ranking_loss
+from bgg.train import interest_overlap, ranking_loss
 
 
 def toy_ratings() -> pl.DataFrame:
@@ -378,3 +378,19 @@ def test_multi_tower_scores_a_target_by_its_best_matching_interest():
         for target in range(5):
             cosines = ideals[user] @ games[user, target]  # one per interest
             assert scores[user, target] == pytest.approx(float(cosines.max() * model.temperature), abs=1e-5)
+
+
+def test_interest_overlap_is_one_when_every_interest_is_the_same():
+    two_tower = pytest.importorskip("bgg.two_tower")
+    if not hasattr(two_tower, "MultiTower"):
+        pytest.skip("MultiTower isn't written yet")
+    from bgg.batches import Batch
+
+    torch.manual_seed(0)
+    model = two_tower.MultiTower(torch.randn(20, 6), 6.0, embedding_size=8, hidden_size=16, n_interests=3)
+    batch = Batch(torch.randint(0, 20, (4, 7)), torch.rand(4, 7) * 10, torch.ones(4, 7, dtype=torch.bool), None, None, None)
+    # with strong, different interests, each looks at different games in the history
+    model.interests.data *= 300
+    assert float(interest_overlap(model, batch)) < 0.99
+    model.interests.data[:] = model.interests.data[0]
+    assert float(interest_overlap(model, batch)) == pytest.approx(1.0, abs=1e-5)

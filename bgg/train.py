@@ -86,6 +86,17 @@ def ranking_loss(model, batch, n_games: int, n_negatives: int, generator, liked:
     return F.binary_cross_entropy_with_logits(scores[real], wanted[real])
 
 
+def interest_overlap(model, batch):
+    """How alike each user's ideal games are, for a model that makes several:
+    the average cosine similarity between two of them, counting a negative one
+    as 0. Added to the loss, it keeps the interests from all becoming the same.
+    """
+    ideals = F.normalize(model.user_vectors(batch.history_items, batch.history_ratings, batch.history_mask), dim=-1)
+    alike = ideals @ ideals.transpose(1, 2)  # [users, interests, interests]
+    others = ~torch.eye(alike.shape[1], dtype=torch.bool, device=alike.device)
+    return alike[:, others].clamp(min=0).mean()
+
+
 def commit() -> str:
     def git(*command):
         return subprocess.run(["git", *command], capture_output=True, text=True).stdout.strip()
@@ -142,6 +153,8 @@ def main(args) -> dict:
         ):
             if ranking:
                 loss = ranking_loss(model, batch, features.shape[0], args.negatives, generator)
+                if args.diversity:
+                    loss = loss + args.diversity * interest_overlap(model, batch)
             else:
                 predicted = model(batch.history_items, batch.history_ratings, batch.history_mask, batch.target_items)
                 loss = ((predicted - batch.target_ratings)[batch.target_mask] ** 2).mean()
@@ -200,6 +213,8 @@ if __name__ == "__main__":
     # training
     parser.add_argument("--objective", choices=["rating", "ranking"], default="rating")
     parser.add_argument("--negatives", type=int, default=256)
+    parser.add_argument("--diversity", type=float, default=0.0,
+                        help="for multi-tower: how hard to push a user's ideal games apart")
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--patience", type=int, default=3)
     parser.add_argument("--lr", type=float, default=1e-3)
