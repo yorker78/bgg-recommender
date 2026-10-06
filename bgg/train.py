@@ -110,7 +110,9 @@ def main(args) -> dict:
     generator = torch.Generator(device).manual_seed(args.seed)
 
     drop = PLAYER_COUNT_FEATURES if args.drop_player_counts else ()
-    item_ids, features, _, creators, n_creator_ids = load_game_tensors(args.data_dir, drop)
+    item_ids, features, _, creators, n_creator_ids = load_game_tensors(
+        args.data_dir, drop, descriptions=args.use_descriptions, ratios=args.use_ratios
+    )
     index = game_index(item_ids)
 
     train, query, test = split(load_ratings(args.data_dir))
@@ -206,6 +208,8 @@ if __name__ == "__main__":
     parser.add_argument("--use-context", action="store_true")
     parser.add_argument("--use-attention", action="store_true")
     parser.add_argument("--drop-player-counts", action="store_true")
+    parser.add_argument("--use-descriptions", action="store_true")
+    parser.add_argument("--use-ratios", action="store_true")
     parser.add_argument("--embedding-size", type=int, default=32)
     parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[])
     parser.add_argument("--cosine", action="store_true")

@@ -1,11 +1,12 @@
 import numpy as np
 import sklearn
 import torch
-from bgg.two_tower import TwoTower
 from numpy import ndarray
 from sklearn import cluster, metrics
 from sklearn.metrics import silhouette_score
 from torch import Tensor, nn
+
+from bgg.two_tower import TwoTower
 
 
 class MultiInterest(nn.Module):

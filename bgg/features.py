@@ -13,6 +13,8 @@ from pathlib import Path
 
 import polars as pl
 import torch
+from sklearn.decomposition import TruncatedSVD
+from sklearn.feature_extraction.text import TfidfVectorizer
 from torch import Tensor
 
 # Straight from games.csv. Left out on purpose: AvgRating, BayesAvgRating,
@@ -52,6 +54,9 @@ def engineered(games: pl.DataFrame) -> pl.DataFrame:
             ).list.any()
             for n in PLAYER_COUNTS
         },
+        RatioScarcityHype=pl.when(pl.col('NumOwned') > 0).then((pl.col('NumWish')+pl.col('NumWant'))/pl.col('NumOwned')).otherwise(0),
+        RatioWeightVotes=pl.when(pl.col('NumUserRatings') > 0).then(pl.col('NumWeightVotes') / pl.col('NumUserRatings')).otherwise(0),
+        RatioWeightPerHour=pl.when((pl.col('MfgPlaytime') > 0) & (pl.col('GameWeight') > 0)).then(pl.col('GameWeight') / pl.col('MfgPlaytime')).otherwise(None)
     )
 
 
@@ -66,6 +71,7 @@ def build_game_features(data_dir: str | Path) -> pl.DataFrame:
     features = (
         games.select(pl.col("BGGId").alias("item_id"), *GAME_COLUMNS)
         .hstack(engineered(games))
+        .hstack(description_vectors(games))
         .hstack(mechanics.select(NumMechanics=pl.sum_horizontal(pl.all())))
     )
     for table in flags:
@@ -74,17 +80,27 @@ def build_game_features(data_dir: str | Path) -> pl.DataFrame:
     values = pl.exclude("item_id").cast(pl.Float32)
     return features.with_columns(values.fill_null(values.median()))
 
+def description_vectors(games: pl.DataFrame) -> pl.DataFrame:
+    vectorizer = TfidfVectorizer(min_df=5, max_features=20000)
+    desc_vectors = vectorizer.fit_transform(games['Description'].fill_null('').to_list())
+    svd = TruncatedSVD(n_components=64, random_state=0)
+    embedded_desc = svd.fit_transform(desc_vectors)
+    return pl.DataFrame(embedded_desc, schema=[f'Desc{i}' for i in range(64)], orient='row')
 
 # long-tailed counts and durations, compressed with log(1 + x) before scaling
 LOG_COLUMNS = [
     "NumOwned", "NumWant", "NumWish", "NumUserRatings", "NumAlternates",
     "NumExpansions", "NumImplementations", "MfgPlaytime", "ComMinPlaytime",
-    "ComMaxPlaytime",
+    "ComMaxPlaytime", "RatioScarcityHype", "RatioWeightPerHour"
 ]  # fmt: skip
 
 
+RATIO_COLUMNS = ("RatioScarcityHype", "RatioWeightVotes", "RatioWeightPerHour")
+
+
 def load_game_tensors(
-    data_dir: str | Path, drop: tuple[str, ...] = (), max_creators: int = 32
+    data_dir: str | Path, drop: tuple[str, ...] = (), max_creators: int = 32,
+    descriptions: bool = False, ratios: bool = False,
 ) -> tuple[pl.Series, Tensor, list[str], Tensor, int]:
     """Reads the tables written by this module as tensors for a model.
 
@@ -92,17 +108,26 @@ def load_game_tensors(
     `features` is [games, features] with every non-flag column scaled to mean 0
     and standard deviation 1. `creators` is [games, max_creators] creator ids,
     padded with 0. Columns whose name starts with anything in `drop` are left
-    out, which is how a run without the player-count features is made.
+    out, which is how a run without the player-count features is made. The
+    description and ratio columns are left out unless `descriptions` or
+    `ratios` is set, so models trained before they existed still load.
     """
     data_dir = Path(data_dir)
     table = pl.read_parquet(data_dir / "game_features.parquet")
-    names = [c for c in table.columns if c != "item_id" and not c.startswith(drop)]
+    if not descriptions:
+        drop = (*drop, "Desc")
+    # by exact name: one of the mechanics is called "Ratio / Combat Results Table"
+    left_out = () if ratios else RATIO_COLUMNS
+    names = [c for c in table.columns if c != "item_id" and not c.startswith(drop) and c not in left_out]
     scaled = []
     for name in names:
         column = table[name]
         if name == "YearPublished":
             # 0 means unknown, and a few ancient games are dated in the BCs
             column = column.clip(1950, None)
+        if name in RATIO_COLUMNS:
+            # a handful of games have ratios dozens of times the usual; cap them
+            column = column.clip(upper_bound=column.quantile(0.99))
         if name in LOG_COLUMNS:
             column = column.log1p()
         if column.n_unique() > 2 and column.std() > 0:

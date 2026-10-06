@@ -394,3 +394,22 @@ def test_interest_overlap_is_one_when_every_interest_is_the_same():
     assert float(interest_overlap(model, batch)) < 0.99
     model.interests.data[:] = model.interests.data[0]
     assert float(interest_overlap(model, batch)) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_description_columns_are_only_loaded_when_asked_for(tmp_path):
+    from bgg.features import load_game_tensors
+
+    pl.DataFrame(
+        {
+            "item_id": [1, 2, 3], "GameWeight": [1.0, 2.0, 3.0], "Desc0": [0.1, 0.2, 0.3],
+            "RatioScarcityHype": [0.5, 0.1, 0.3],
+            "Ratio / Combat Results Table": [0.0, 1.0, 0.0],  # a mechanic, not one of the new ratios
+        }
+    ).write_parquet(tmp_path / "game_features.parquet")
+    pl.DataFrame({"item_id": [1, 2, 3], "creators": [[1], [], [1]]}).write_parquet(tmp_path / "game_creators.parquet")
+    pl.DataFrame({"creator_id": [1], "kind": ["designer"], "name": ["someone"]}).write_parquet(tmp_path / "creators.parquet")
+    mechanic = "Ratio / Combat Results Table"
+    assert load_game_tensors(tmp_path)[2] == ["GameWeight", mechanic]
+    _, features, names, _, _ = load_game_tensors(tmp_path, descriptions=True)
+    assert names == ["GameWeight", "Desc0", mechanic] and features.shape == (3, 3)
+    assert load_game_tensors(tmp_path, ratios=True)[2] == ["GameWeight", "RatioScarcityHype", mechanic]

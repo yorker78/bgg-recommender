@@ -60,12 +60,33 @@ def test_engineered_player_count_features():
             "MfgPlaytime": [60, 30, 45, 45],
             "ComMinPlaytime": [30, 30, 60, 45],
             "ComMaxPlaytime": [60, 30, 90, 45],
+            "NumWish": [4, 0, 0, 0],
+            "NumWant": [6, 0, 0, 0],
+            "NumWeightVotes": [5, 0, 0, 0],
+            "GameWeight": [3.0, 2.0, 0.0, 0.0],
         }
     )
     out = engineered(games)
+    assert out["RatioScarcityHype"][0] == 0.5  # 10 people want it, 20 own it
+    assert out["RatioWeightVotes"][0] == 0.5
+    assert out["RatioWeightPerHour"][0] == pytest.approx(3.0 / 60)
     assert out["PlayerCountRatio"].to_list() == [0.5, 0, pytest.approx(1 / 7), 0]
     assert out["GoodAt4Players"].to_list() == [True, False, False, False]
     assert out["GoodAt8Players"].to_list() == [False, False, True, False]
     assert out["OverHyped"].to_list() == [False, True, False, False]
     assert out["AgeRecDiff"].to_list() == [2.0, None, 0.0, 0.0]
     assert out["MfgTimeAccuracy"].to_list() == [1, 0, -1, 0]
+
+
+def test_engineered_ratios_survive_a_zero_divisor():
+    games = pl.DataFrame(
+        {
+            "GoodPlayers": ["[]"], "MinPlayers": [1], "MaxPlayers": [1], "NumUserRatings": [0], "NumOwned": [0],
+            "MfgAgeRec": [0], "ComAgeRec": [0.0], "MfgPlaytime": [0], "ComMinPlaytime": [0], "ComMaxPlaytime": [0],
+            "NumWish": [3], "NumWant": [3], "NumWeightVotes": [0], "GameWeight": [0.0],
+        }
+    )
+    out = engineered(games)
+    for name in ("RatioScarcityHype", "RatioWeightVotes", "RatioWeightPerHour"):
+        value = out[name][0]
+        assert value is None or value == value and abs(value) != float("inf"), name

@@ -164,7 +164,8 @@ if __name__ == "__main__":
         record = json.loads(line)
         runs[record["name"]] = record["settings"]  # the latest run of a name wins, as its weights did
     # settings a run may predate
-    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False, interests=4)
+    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False, interests=4,
+                    use_descriptions=False, use_ratios=False)
 
     train, query, test = split(load_ratings(args.data_dir))
     train, _, _ = hold_out_validation_users(train)
@@ -172,7 +173,9 @@ if __name__ == "__main__":
     for name in args.names:
         settings = argparse.Namespace(**(defaults | runs.get(name, {})))
         drop = PLAYER_COUNT_FEATURES if getattr(settings, "drop_player_counts", False) else ()
-        item_ids, features, _, creators, n_creator_ids = load_game_tensors(args.data_dir, drop)
+        item_ids, features, _, creators, n_creator_ids = load_game_tensors(
+            args.data_dir, drop, descriptions=settings.use_descriptions, ratios=settings.use_ratios
+        )
         index = game_index(item_ids)
         counts = index.join(train.group_by("item_id").len(), on="item_id", how="left").sort("item")["len"].fill_null(0).to_torch()
         if name == "popularity":
