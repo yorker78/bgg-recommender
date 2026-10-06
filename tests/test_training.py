@@ -131,6 +131,11 @@ def models_to_check():
         return
     yield "two tower", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16)
     yield "two tower, cosine", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16, cosine=True)
+    try:
+        from bgg.two_tower import MultiTower
+    except ImportError:
+        return
+    yield "multi tower", lambda: MultiTower(described, 6.0, embedding_size=8, hidden_size=16, n_interests=3)
 
 
 @pytest.mark.parametrize("name,make", list(models_to_check()))
@@ -343,3 +348,15 @@ def test_multi_interest_rejects_an_unknown_method():
     wrapped = multi_interest.MultiInterest(model, method="kmean")
     with pytest.raises(Exception, match="undefined method"):
         wrapped(torch.arange(30)[None], torch.rand(1, 30) * 10, torch.ones(1, 30, dtype=torch.bool), torch.arange(5)[None])
+
+
+def test_multi_tower_learns_to_rank_the_toy_pattern(toy):
+    two_tower = pytest.importorskip("bgg.two_tower")
+    if not hasattr(two_tower, "MultiTower"):
+        pytest.skip("MultiTower isn't written yet")
+    torch.manual_seed(0)
+    model = two_tower.MultiTower(torch.eye(20), 6.0, embedding_size=8, hidden_size=16, n_interests=3)
+    assert learns_to_rank_the_toy_pattern(model, *toy, lr=0.01) > 0.95
+    # one ideal game per interest, for each user
+    vectors = model.user_vectors(torch.zeros(4, 6, dtype=torch.long), torch.zeros(4, 6), torch.ones(4, 6, dtype=torch.bool))
+    assert vectors.shape == (4, 3, 8)

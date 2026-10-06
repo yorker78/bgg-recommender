@@ -164,7 +164,7 @@ if __name__ == "__main__":
         record = json.loads(line)
         runs[record["name"]] = record["settings"]  # the latest run of a name wins, as its weights did
     # settings a run may predate
-    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False)
+    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False, interests=4)
 
     train, query, test = split(load_ratings(args.data_dir))
     train, _, _ = hold_out_validation_users(train)

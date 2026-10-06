@@ -40,6 +40,16 @@ def build_model(args, train_mean: float, features, creators, n_creator_ids) -> t
             hidden_size=(args.hidden_sizes or [64])[0],
             cosine=args.cosine,
         )
+    if args.model == "multi-tower":
+        from bgg.two_tower import MultiTower
+
+        return MultiTower(
+            features,
+            train_mean,
+            embedding_size=args.embedding_size,
+            hidden_size=(args.hidden_sizes or [64])[0],
+            n_interests=args.interests,
+        )
     from bgg.model import Recommender
 
     return Recommender(
@@ -170,7 +180,7 @@ def main(args) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True)
-    parser.add_argument("--model", choices=["bias", "recommender", "two-tower"], required=True)
+    parser.add_argument("--model", choices=["bias", "recommender", "two-tower", "multi-tower"], required=True)
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
@@ -186,6 +196,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding-size", type=int, default=32)
     parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[])
     parser.add_argument("--cosine", action="store_true")
+    parser.add_argument("--interests", type=int, default=4)
     # training
     parser.add_argument("--objective", choices=["rating", "ranking"], default="rating")
     parser.add_argument("--negatives", type=int, default=256)
