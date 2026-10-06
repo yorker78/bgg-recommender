@@ -112,7 +112,7 @@ def models_to_check():
         return
     features = torch.zeros(20, 3)
     creators = torch.zeros(20, 4, dtype=torch.long)
-    yield "recommender", lambda: Recommender(features, creators, 1, use_ids=True, use_content=False, use_creators=False)
+    yield "recommender", lambda: Recommender(features, creators, 1, 6.0, use_ids=True, use_content=False, use_creators=False)
 
 
 @pytest.mark.parametrize("name,make", list(models_to_check()))
@@ -174,7 +174,7 @@ def test_recommender_learns_the_toy_pattern(toy):
     model_module = pytest.importorskip("bgg.model", reason="bgg/model.py isn't written yet")
     torch.manual_seed(0)
     model = model_module.Recommender(
-        torch.zeros(20, 3), torch.zeros(20, 4, dtype=torch.long), 1,
+        torch.zeros(20, 3), torch.zeros(20, 4, dtype=torch.long), 1, 6.0,
         use_ids=True, use_content=False, use_creators=False,
     )
     assert learns_the_toy_pattern(model, *toy) < 0.5

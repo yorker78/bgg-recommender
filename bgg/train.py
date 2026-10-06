@@ -33,6 +33,7 @@ def build_model(args, train_mean: float, features, creators, n_creator_ids) -> t
         features,
         creators,
         n_creator_ids,
+        train_mean,
         use_ids=args.use_ids,
         use_content=args.use_content,
         use_creators=args.use_creators,
