@@ -1,12 +1,11 @@
 import torch
 from torch import Tensor, nn
 
-GAME_EMBEDDING_SIZE = 32
 SHRINK = 5
 
 class Recommender(nn.Module):
     def __init__(self, game_features: Tensor, creators: Tensor, n_creator_ids: int, mean_rating: float, *,
-                 use_ids: bool, use_content: bool, use_creators: bool):
+                 use_ids: bool, use_content: bool, use_creators: bool, embedding_size: int = 32):
         super().__init__()
         self.register_buffer("game_features", game_features)
         self.register_buffer("creators", creators)
@@ -16,14 +15,15 @@ class Recommender(nn.Module):
         self.use_content = use_content
         self.use_creators = use_creators
         if use_ids:
-            self.game_embeddings = nn.Embedding(game_features.shape[0], GAME_EMBEDDING_SIZE)
+            self.game_embeddings = nn.Embedding(game_features.shape[0], embedding_size)
             nn.init.normal_(self.game_embeddings.weight, std=0.1)
         if use_content:
-            self.game_content = nn.Linear(self.game_features.shape[1], GAME_EMBEDDING_SIZE)
+            self.game_content = nn.Linear(self.game_features.shape[1], embedding_size)
             nn.init.normal_(self.game_content.weight, std=0.1)
         if use_creators:
-            self.game_creators = nn.Embedding(n_creator_ids, GAME_EMBEDDING_SIZE)
+            self.game_creators = nn.Embedding(n_creator_ids, embedding_size)
             nn.init.normal_(self.game_creators.weight, std=0.1)
+            self.register_buffer("creator_mask", self.creators != 0)
         self.game_offset = nn.Embedding(game_features.shape[0], 1)
         nn.init.zeros_(self.game_offset.weight)
     
@@ -37,8 +37,9 @@ class Recommender(nn.Module):
         if self.use_content:
             total = total + self.game_content(self.game_features[items])
         if self.use_creators:
-            creator_mask = self.creators != 0
-            total = total + ((self.game_creators(self.creators) * creator_mask[:, :, None]).sum(1) / creator_mask.sum(1)[:, None].clamp(min=1))[items]
+            creator_vectors = self.game_creators(self.creators) * self.creator_mask[:, :, None]
+            per_game = creator_vectors.sum(1) / self.creator_mask.sum(1)[:, None].clamp(min=1)
+            total = total + per_game[items]
         return total
     
     def forward(self,
