@@ -75,7 +75,7 @@ class MultiTower(nn.Module):
         ideal_games = torch.nn.functional.normalize(self.user_vectors(history_items, history_ratings, history_mask), dim=-1)
         target_games = torch.nn.functional.normalize(self.game_vectors(target_items), dim=-1)
         scores = (target_games @ ideal_games.transpose(1, 2)).max(-1).values
-        return scores * self.temperatures
+        return scores * self.temperature
 
     def game_vectors(self, items: Tensor) -> Tensor:
         return self.game_tower(self.game_features[items])
