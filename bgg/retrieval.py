@@ -20,7 +20,6 @@ from bgg.baselines import Popularity
 from bgg.batches import RatingTable, _gather, game_index, to_table
 from bgg.data import hold_out_validation_users, load_ratings, split
 from bgg.features import load_game_tensors
-from bgg.train import PLAYER_COUNT_FEATURES, build_model
 
 
 @torch.no_grad()
@@ -91,6 +90,9 @@ def score_retrieval(
 
 
 if __name__ == "__main__":
+    # imported here because bgg.train uses score_retrieval
+    from bgg.train import PLAYER_COUNT_FEATURES, build_model
+
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="+", help="runs from results.jsonl, or 'popularity'")
     parser.add_argument("--data-dir", default="data")
@@ -104,7 +106,7 @@ if __name__ == "__main__":
         record = json.loads(line)
         runs[record["name"]] = record["settings"]  # the latest run of a name wins, as its weights did
     # settings a run may predate
-    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[])
+    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False)
 
     train, query, test = split(load_ratings(args.data_dir))
     train, _, _ = hold_out_validation_users(train)

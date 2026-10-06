@@ -8,6 +8,8 @@ import torch
 from bgg.baselines import BiasModel
 from bgg.batches import evaluation_batches, game_index, to_table, training_batches
 from bgg.evaluate import average_rating_predictions, r_squared, score_model
+from bgg.retrieval import score_retrieval
+from bgg.train import ranking_loss
 
 
 def toy_ratings() -> pl.DataFrame:
@@ -207,7 +209,6 @@ def test_retrieval_scores_a_known_ranking():
     game 5, so their top recommendations are 4, 3, 2, 1, 0. They went on to
     like games 4 and 1 and to dislike game 3."""
     from bgg.baselines import Popularity
-    from bgg.retrieval import score_retrieval
 
     index = game_index(pl.Series([0, 1, 2, 3, 4, 5]))
     users = pl.Series(["a", "b"])
@@ -227,3 +228,33 @@ def test_retrieval_scores_a_known_ranking():
     log2 = torch.log2
     expected = (1 / log2(torch.tensor(2.0)) + 1 / log2(torch.tensor(5.0))) / (1 / log2(torch.tensor(2.0)) + 1 / log2(torch.tensor(3.0)))
     assert result["ndcg@10"] == pytest.approx(float(expected))
+
+
+def learns_to_rank_the_toy_pattern(model, ratings, index, users, steps=200, lr=0.05) -> float:
+    """Trains on the ranking objective, then asks for held-out users' unseen
+    games in order. Three of each user's six are ones they love."""
+    table = to_table(ratings.filter(pl.col("user_id") < "u30"), index, users.filter(users < "u30"))
+    held_out = ratings.filter(pl.col("user_id") >= "u30")
+    held_out_users = held_out["user_id"].unique().sort()
+    query = to_table(held_out.filter(pl.col("item_id") < 114), index, held_out_users)
+    test = to_table(held_out.filter(pl.col("item_id") >= 114), index, held_out_users)
+    generator = torch.Generator().manual_seed(0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    for _ in range(steps):
+        model.train()
+        for batch in training_batches(table, 30, 14, 6, generator):
+            loss = ranking_loss(model, batch, n_games=20, n_negatives=4, generator=generator)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+    return score_retrieval(model, query, test, n_games=20)["ndcg@10"]
+
+
+def test_recommender_learns_to_rank_the_toy_pattern(toy):
+    model_module = pytest.importorskip("bgg.model")
+    torch.manual_seed(0)
+    model = model_module.Recommender(
+        torch.zeros(20, 3), torch.zeros(20, 4, dtype=torch.long), 1, 6.0,
+        use_ids=True, use_content=False, use_creators=False,
+    )
+    assert learns_to_rank_the_toy_pattern(model, *toy) > 0.95

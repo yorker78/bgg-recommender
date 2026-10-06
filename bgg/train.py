@@ -2,6 +2,7 @@
 
     python -m bgg.train --name game-averages --model bias
     python -m bgg.train --name ids-and-content --model recommender --use-ids --use-content
+    python -m bgg.train --name two-tower --model two-tower --objective ranking
 
 Every run appends one line to results.jsonl with its settings, its validation
 and test scores, and the commit it ran on. The best weights go to runs/.
@@ -14,12 +15,14 @@ import time
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 
 from bgg.baselines import BiasModel
 from bgg.batches import game_index, to_table, training_batches
 from bgg.data import hold_out_validation_users, load_ratings, split
 from bgg.evaluate import score_model
 from bgg.features import load_game_tensors
+from bgg.retrieval import score_retrieval
 
 PLAYER_COUNT_FEATURES = ("GoodAt", "PlayerCountRatio", "MinPlayers", "MaxPlayers", "BestPlayers")
 
@@ -27,6 +30,16 @@ PLAYER_COUNT_FEATURES = ("GoodAt", "PlayerCountRatio", "MinPlayers", "MaxPlayers
 def build_model(args, train_mean: float, features, creators, n_creator_ids) -> torch.nn.Module:
     if args.model == "bias":
         return BiasModel(features.shape[0], train_mean, user_offset=args.user_offset)
+    if args.model == "two-tower":
+        from bgg.two_tower import TwoTower
+
+        return TwoTower(
+            features,
+            train_mean,
+            embedding_size=args.embedding_size,
+            hidden_size=(args.hidden_sizes or [64])[0],
+            cosine=args.cosine,
+        )
     from bgg.model import Recommender
 
     return Recommender(
@@ -43,6 +56,24 @@ def build_model(args, train_mean: float, features, creators, n_creator_ids) -> t
         embedding_size=args.embedding_size,
         hidden_sizes=tuple(args.hidden_sizes),
     )
+
+
+def ranking_loss(model, batch, n_games: int, n_negatives: int, generator, liked: float = 8.0):
+    """Teaches a model to rank: each user's targets are scored alongside games
+    drawn at random, and the model is pushed to score the targets they liked
+    (rated `liked` or more) high and everything else low.
+
+    The random games are almost always ones the user never rated. A few will
+    be games they did, which is rare enough among 22,000 not to matter.
+    """
+    n_users = len(batch.target_items)
+    negatives = torch.randint(n_games, (n_users, n_negatives), generator=generator, device=batch.target_items.device)
+    scores = model(
+        batch.history_items, batch.history_ratings, batch.history_mask, torch.cat([batch.target_items, negatives], dim=1)
+    )
+    wanted = torch.cat([(batch.target_ratings >= liked).float(), torch.zeros_like(negatives, dtype=torch.float)], dim=1)
+    real = torch.cat([batch.target_mask, torch.ones_like(negatives, dtype=torch.bool)], dim=1)
+    return F.binary_cross_entropy_with_logits(scores[real], wanted[real])
 
 
 def commit() -> str:
@@ -79,6 +110,19 @@ def main(args) -> dict:
     weights = Path("runs") / f"{args.name}.pt"
     weights.parent.mkdir(exist_ok=True)
 
+    ranking = args.objective == "ranking"
+    key = "ndcg@10" if ranking else "r2"
+
+    def evaluate(tables, **options):
+        if ranking:
+            return score_retrieval(model, *tables, features.shape[0], **options)
+        return score_model(model, *tables)
+
+    def describe(scores):
+        if ranking:
+            return f"{scores['hits@10']:.3f} liked games in the top 10, NDCG@10 {scores['ndcg@10']:.4f}"
+        return f"R2 {scores['r2']:.4f}, MAE {scores['mae']:.3f}"
+
     started = time.time()
     best, epochs_since_best, history = None, 0, []
     for epoch in range(1, args.epochs + 1):
@@ -86,16 +130,20 @@ def main(args) -> dict:
         for batch in training_batches(
             train_table, args.users_per_batch, args.max_history, args.max_targets, generator
         ):
-            predicted = model(batch.history_items, batch.history_ratings, batch.history_mask, batch.target_items)
-            loss = ((predicted - batch.target_ratings)[batch.target_mask] ** 2).mean()
+            if ranking:
+                loss = ranking_loss(model, batch, features.shape[0], args.negatives, generator)
+            else:
+                predicted = model(batch.history_items, batch.history_ratings, batch.history_mask, batch.target_items)
+                loss = ((predicted - batch.target_ratings)[batch.target_mask] ** 2).mean()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        scores = score_model(model, *validation)
-        history.append(scores["r2"])
-        print(f"epoch {epoch}: validation R2 {scores['r2']:.4f}, MAE {scores['mae']:.3f}", flush=True)
-        if best is None or scores["r2"] > best["r2"]:
+        # a smaller sample of users per epoch keeps ranking every game affordable
+        scores = evaluate(validation, max_users=2_000) if ranking else evaluate(validation)
+        history.append(scores[key])
+        print(f"epoch {epoch}: validation {describe(scores)}", flush=True)
+        if best is None or scores[key] > best[key]:
             best, epochs_since_best = scores, 0
             torch.save(model.state_dict(), weights)
         else:
@@ -111,18 +159,18 @@ def main(args) -> dict:
         "epochs": len(history),
         "seconds": round(time.time() - started),
         "validation": best,
-        "test": score_model(model, *held_out),
+        "test": evaluate(held_out),
     }
     with open("results.jsonl", "a") as file:
         file.write(json.dumps(result) + "\n")
-    print(f"test R2 {result['test']['r2']:.4f}, MAE {result['test']['mae']:.3f}")
+    print(f"test {describe(result['test'])}")
     return result
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True)
-    parser.add_argument("--model", choices=["bias", "recommender"], required=True)
+    parser.add_argument("--model", choices=["bias", "recommender", "two-tower"], required=True)
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
@@ -137,7 +185,10 @@ if __name__ == "__main__":
     parser.add_argument("--drop-player-counts", action="store_true")
     parser.add_argument("--embedding-size", type=int, default=32)
     parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[])
+    parser.add_argument("--cosine", action="store_true")
     # training
+    parser.add_argument("--objective", choices=["rating", "ranking"], default="rating")
+    parser.add_argument("--negatives", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--patience", type=int, default=3)
     parser.add_argument("--lr", type=float, default=1e-3)
