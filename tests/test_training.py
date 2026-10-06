@@ -360,3 +360,21 @@ def test_multi_tower_learns_to_rank_the_toy_pattern(toy):
     # one ideal game per interest, for each user
     vectors = model.user_vectors(torch.zeros(4, 6, dtype=torch.long), torch.zeros(4, 6), torch.ones(4, 6, dtype=torch.bool))
     assert vectors.shape == (4, 3, 8)
+
+
+def test_multi_tower_scores_a_target_by_its_best_matching_interest():
+    two_tower = pytest.importorskip("bgg.two_tower")
+    if not hasattr(two_tower, "MultiTower"):
+        pytest.skip("MultiTower isn't written yet")
+    torch.manual_seed(0)
+    model = two_tower.MultiTower(torch.randn(20, 6), 6.0, embedding_size=8, hidden_size=16, n_interests=3).eval()
+    history = (torch.randint(0, 20, (4, 7)), torch.rand(4, 7) * 10, torch.rand(4, 7) > 0.2)
+    targets = torch.randint(0, 20, (4, 5))
+    with torch.no_grad():
+        scores = model(*history, targets)
+        ideals = torch.nn.functional.normalize(model.user_vectors(*history), dim=-1)  # [users, interests, d]
+        games = torch.nn.functional.normalize(model.game_vectors(targets), dim=-1)  # [users, targets, d]
+    for user in range(4):
+        for target in range(5):
+            cosines = ideals[user] @ games[user, target]  # one per interest
+            assert scores[user, target] == pytest.approx(float(cosines.max() * model.temperature), abs=1e-5)
