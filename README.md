@@ -47,6 +47,16 @@ python -m venv .venv
 .venv/bin/python -m bgg.train --name game-averages --model bias --lr 0.05
 ```
 
+## Data and licensing
+
+The ratings and game details come from the [Board Games Database from BoardGameGeek](https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek), published on Kaggle by threnjen under the [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) license. Its description says it was sourced and shared in accordance with BoardGameGeek's XML API Terms of Use. This project does not call the BoardGameGeek API.
+
+This repository is the source for the whole project, including the parts that are hosted elsewhere:
+
+- **Code**, here: MIT license.
+- **Trained model weights and the hosted demo**, to be published outside this repository: built from the dataset above, and shared under CC BY-SA 3.0 with credit to it. That includes the game names and details the demo displays. See [LICENSE-ARTIFACTS](LICENSE-ARTIFACTS).
+- **The dataset itself** is not redistributed. Download it from Kaggle to run the code.
+
 ## Layout
 
 - `bgg/data.py` loads the ratings and splits them into training, validation, query, and test sets.

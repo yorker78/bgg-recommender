@@ -1,0 +1,25 @@
+Trained model weights and hosted demo
+=====================================
+
+The code in this repository is under the MIT license. See LICENSE.
+
+This file covers what is built from the data and published outside this
+repository: the trained model weights, and the hosted demo, including the
+game names and details it displays.
+
+They are built from the Board Games Database from BoardGameGeek, published
+on Kaggle by threnjen under the Creative Commons Attribution-ShareAlike 3.0
+license (CC BY-SA 3.0):
+
+    https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek
+
+They are shared under that same license:
+
+    https://creativecommons.org/licenses/by-sa/3.0/
+
+In short, you may share and adapt them, including commercially, as long as
+you give credit to the dataset and to this project, link to the license,
+say whether you changed anything, and share whatever you build from them
+under the same license. The license text at the link above is what governs.
+
+Model weights trained by Billy York, 2026.
