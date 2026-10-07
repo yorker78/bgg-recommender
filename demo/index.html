@@ -18,15 +18,23 @@
     <body>
         <main class="responsive">
             <nav>
-                <a class="button transparent" href="https://www.billyyork.com/"><i>arrow_back</i><span>Billy York</span></a>
+                <a class="button transparent" id="back" href="https://www.billyyork.com/"><i>arrow_back</i><span>Billy York</span></a>
                 <div class="max"></div>
                 <a class="button border" id="code-link" hidden target="_blank" rel="noreferrer"><i>code</i><span>View the code</span></a>
+                <button class="circle transparent" id="theme" aria-label="Switch between light and dark"><i></i></button>
             </nav>
             <h3>Board Game Recommender</h3>
             <p>
                 Pick a few games you like. A two-tower neural network, trained on 19 million BoardGameGeek ratings,
                 turns your picks into one "ideal game" and finds the games closest to it. It runs entirely in your
                 browser.
+            </p>
+            <p class="small-text">
+                Game data, and the model built from it, come from the
+                <a class="link" target="_blank" rel="noreferrer" href="https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek">Board Games Database from BoardGameGeek</a>
+                by threnjen, shared here under
+                <a class="link" target="_blank" rel="noreferrer" href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>.
+                Not affiliated with BoardGameGeek.
             </p>
 
             <h6>Start with a set</h6>
@@ -49,7 +57,7 @@
 
             <div id="results" hidden>
                 <div class="space"></div>
-                <article class="tertiary-container" id="gem" hidden></article>
+                <article class="secondary-container" id="gem" hidden></article>
                 <h5>Recommended for you</h5>
                 <nav>
                     <label class="switch">
@@ -61,18 +69,12 @@
                 <ul class="list border" id="recommendations"></ul>
             </div>
             <p id="status">Loading the model...</p>
+            <div class="large-space"></div>
+            <!-- the portfolio's footer: the same line and the same three links -->
+            <nav id="footer">
+                <span class="max">© 2026 Copyright Billy York</span>
+                <span id="social"></span>
+            </nav>
         </main>
-        <footer class="transparent">
-            <div class="grid">
-                <span class="s12 m7 small-text">
-                    © 2026 Billy York. Game data and the model built from it come from the
-                    <a class="link" target="_blank" rel="noreferrer" href="https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek">Board Games Database from BoardGameGeek</a>
-                    by threnjen, shared here under
-                    <a class="link" target="_blank" rel="noreferrer" href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>.
-                    Not affiliated with BoardGameGeek.
-                </span>
-                <span class="s12 m5 right-align middle-align" id="social"></span>
-            </div>
-        </footer>
     </body>
 </html>

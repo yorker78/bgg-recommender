@@ -86,12 +86,35 @@ function chip(game, onclick, iconName) {
     return el('button', { class: 'chip', onclick: () => onclick(game) }, iconName ? icon(iconName) : null, el('span', {}, title(game)))
 }
 
+// BoardGameGeek's own categories, each with an icon to stand in for box art
+const CATEGORY_ICONS = {
+    Strategy: 'chess', Thematic: 'theater_comedy', War: 'swords', Family: 'family_restroom',
+    CGS: 'playing_cards', Abstract: 'category', Party: 'celebration', Childrens: 'toys',
+}
+function categoryIcon(game) {
+    const flags = data.games.categories ?? {}
+    const category = Object.keys(CATEGORY_ICONS).find((name) => flags[name]?.[game])
+    return el('i', { class: 'secondary-text', title: category ?? '' }, CATEGORY_ICONS[category] ?? 'casino')
+}
+
+/** "2-4 players, 60 min, complexity 2.3 of 5", from whatever the export carries. */
+function details(game) {
+    const { min_players: low, max_players: high, minutes, weight } = data.games
+    const parts = []
+    if (low?.[game] > 0) parts.push(high[game] > low[game] ? `${low[game]}-${high[game]} players` : `${low[game]} player${low[game] === 1 ? '' : 's'}`)
+    if (minutes?.[game] > 0) parts.push(`${minutes[game]} min`)
+    if (weight?.[game] > 0) parts.push(`complexity ${weight[game].toFixed(1)} of 5`)
+    return parts.join(', ')
+}
+
 function recommendation(game) {
     const because = closestPick(data.unit, data.model.d, game, state.picks)
     return el('li', {},
+        categoryIcon(game),
         el('div', { class: 'max' },
             el('a', { class: 'link', href: `https://boardgamegeek.com/boardgame/${data.games.id[game]}`, target: '_blank', rel: 'noreferrer' },
                 el('h6', { class: 'small' }, title(game))),
+            el('div', { class: 'small-text' }, details(game)),
             el('div', { class: 'small-text' }, `Closest to your pick ${data.games.name[because]}`)),
         el('button', { class: 'border small', onclick: () => pick(game) }, icon('thumb_up'), el('span', {}, 'Played it, liked it')),
         el('button', { class: 'border small', onclick: () => hide(game) }, icon('visibility_off'), el('span', {}, 'Not for me')))
@@ -150,29 +173,42 @@ function draw() {
                     el('div', { class: 'small-text' }, 'Hidden gem: your best match outside the 1,000 best-known games'),
                     el('a', { class: 'link', href: `https://boardgamegeek.com/boardgame/${games.id[gem]}`, target: '_blank', rel: 'noreferrer' },
                         el('h6', { class: 'small' }, title(gem))),
+                    el('div', { class: 'small-text' }, details(gem)),
                     el('div', { class: 'small-text' },
                         `Rated ${games.average[gem].toFixed(1)} by ${games.ratings[gem].toLocaleString()} people. Closest to your pick ${games.name[closestPick(unit, model.d, gem, state.picks)]}`)),
                 el('button', { class: 'border small', onclick: () => hide(gem) }, icon('visibility_off'), el('span', {}, 'Not for me'))))
     }
 }
 
-function socialLinks() {
-    // the portfolio's own icons; "mode" is shared with it when both are on the same site
-    let mode = 'light'
+// Light or dark is the portfolio's own setting: it is kept under the same name in
+// the browser's storage, which the two share when they are on the same site.
+function stored(mode) {
     try {
-        mode = globalThis.ui?.('mode', localStorage.getItem('mode') || 'auto') ?? mode
+        if (mode) localStorage.setItem('mode', mode)
+        return localStorage.getItem('mode')
     } catch {
-        // storage can be blocked; the page works without it
+        return null // storage can be blocked; the page then follows the system
     }
-    if (mode !== 'dark' && mode !== 'light') mode = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-    const links = { LinkedIn: 'https://www.linkedin.com/in/billy-york/', GitHub: 'https://github.com/yorker78' }
+}
+function theme(mode) {
+    ui('mode', mode)
+    const now = ui('mode') === 'dark' ? 'dark' : 'light'
+    $('theme').firstElementChild.textContent = now === 'dark' ? 'light_mode' : 'dark_mode'
+    // the portfolio's footer links and icons
+    const links = {
+        Handshake: 'https://msoe.joinhandshake.com/stu/users/55266622',
+        LinkedIn: 'https://www.linkedin.com/in/billy-york/',
+        GitHub: 'https://github.com/yorker78',
+    }
     $('social').replaceChildren(...Object.entries(links).map(([name, href]) =>
-        el('a', { href, target: '_blank', rel: 'noreferrer', ariaLabel: name, class: 'small-margin' },
-            el('img', { src: `https://www.billyyork.com/assets/img/${name.toLowerCase()}-${mode}.png`, alt: name }))))
+        el('a', { href, target: '_blank', rel: 'noreferrer', ariaLabel: name, title: name },
+            el('i', { class: 'tiny' }, el('img', { src: `https://www.billyyork.com/assets/img/${name.toLowerCase()}-${now}.png`, alt: '' })))))
+    return now
 }
 
 async function start() {
-    socialLinks()
+    theme(stored() || 'auto')
+    $('theme').addEventListener('click', () => theme(stored(ui('mode') === 'dark' ? 'light' : 'dark')))
     if (CODE_URL) Object.assign($('code-link'), { href: CODE_URL, hidden: false })
     try {
         data = await load()

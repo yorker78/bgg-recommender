@@ -476,7 +476,9 @@ def test_exported_demo_files_reproduce_the_models_top_ten(tmp_path, monkeypatch)
     monkeypatch.setattr(export, "load_run", lambda name, data_dir: (model, item_ids), raising=False)
     # the csv lists the games backwards, so details copied in file order would be caught
     (tmp_path / "games.csv").write_text(
-        "BGGId,Name,YearPublished,NumUserRatings,AvgRating\n" + "".join(f"{i},Game {i},2000,{i},7.0\n" for i in reversed(item_ids.to_list()))
+        "BGGId,Name,YearPublished,NumUserRatings,AvgRating,GameWeight,MinPlayers,MaxPlayers,MfgPlaytime,Family,"
+        "Cat:Thematic,Cat:Strategy,Cat:War,Cat:Family,Cat:CGS,Cat:Abstract,Cat:Party,Cat:Childrens\n"
+        + "".join(f"{i},Game {i},2000,{i},7.0,2.5,2,4,60,,0,1,0,0,0,0,0,0\n" for i in reversed(item_ids.to_list()))
     )
     export.export_demo("any", tmp_path, tmp_path / "out")
     saved = json.load(open(tmp_path / "out" / "model.json"))
