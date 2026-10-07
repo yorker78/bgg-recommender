@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { byRatings, closestPick, hiddenGem, search } from './select.js'
+import { byRatings, closestPick, hiddenGem, isCrude, search } from './select.js'
 
 const games = {
     name: ['Catan', 'Catan Big Box', 'Obscure Gem', 'Bad Obscure', 'Catacombs', 'Other Gem'],
@@ -18,6 +18,11 @@ test('search puts names that start with the query first, then the best known, an
     assert.deepEqual(search(lower, ratings, 'cat', new Set(), 5), [0, 1, 4])
     assert.deepEqual(search(lower, ratings, 'gem', new Set([2]), 5), [5])
     assert.deepEqual(search(lower, ratings, '  ', new Set(), 5), [])
+})
+
+test('isCrude catches crude titles and leaves ordinary ones, including near misses', () => {
+    for (const name of ['Eat Poop You Cat', 'Shit Happens', 'Smart Ass', 'Exploding Kittens: NSFW Deck', 'F**k. The game']) assert.ok(isCrude(name), name)
+    for (const name of ['Assassin', 'Battle of the Sexes', 'Craps', 'Button Men', 'Secret Hitler', 'Oh Hell!', 'Seaweed']) assert.ok(!isCrude(name), name)
 })
 
 test('closestPick finds the pick pointing the same way as the game', () => {

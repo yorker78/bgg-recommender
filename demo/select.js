@@ -17,6 +17,14 @@ export function search(lowerNames, ratings, query, excluded, count) {
         .slice(0, count)
 }
 
+/**
+ * Titles the page will not suggest on its own, since it is shown to people who
+ * did not come for crude humour. A visitor can still search for them by name.
+ * ponytail: a short word list, not a rating of the game; extend it when one slips through
+ */
+const CRUDE = /\b(poop|poo|shit|f\*+k|fuck\w*|sex|orgas\w*|porn\w*|nsfw|ass|crap|crappy|fart|stoner|stoned|drunk|weed)\b/i
+export const isCrude = (name) => CRUDE.test(name)
+
 /** The pick most like a game: the "because you picked" line. */
 export function closestPick(unit, d, game, picks) {
     let best = picks[0]

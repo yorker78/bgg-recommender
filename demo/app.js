@@ -1,7 +1,7 @@
 // The page: what the visitor has picked and hidden, and drawing it. The model's
 // arithmetic is in recommend.js and the choosing of what to show in select.js.
 import { scoreAll, topGames, unitVectors, userVector } from './recommend.js'
-import { byRatings, closestPick, hiddenGem, search } from './select.js'
+import { byRatings, closestPick, hiddenGem, isCrude, search } from './select.js'
 
 // set when the repository is public
 const CODE_URL = ''
@@ -41,6 +41,7 @@ async function load() {
         model, games, order, rank,
         unit: unitVectors(model.vectors, model.d),
         lowerNames: games.name.map((name) => name.toLowerCase()),
+        crude: order.filter((game) => isCrude(games.name[game])),
     }
 }
 
@@ -121,14 +122,15 @@ function recommendation(game) {
 }
 
 function draw() {
-    const { games, order, rank, unit, model, lowerNames } = data
+    const { games, order, rank, unit, model, lowerNames, crude } = data
     const taken = new Set([...state.picks, ...state.hidden])
 
     let recommended = []
     let ranked = []
     if (state.picks.length) {
         const scores = scoreAll(unit, model.d, userVector(model, state.picks))
-        ranked = topGames(scores, taken, scores.length)
+        // crude titles are never suggested, only found by searching for them
+        ranked = topGames(scores, new Set([...taken, ...crude]), scores.length)
         recommended = (state.hideKnown ? ranked.filter((game) => rank[game] >= WELL_KNOWN) : ranked).slice(0, 10)
     }
 
