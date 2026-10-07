@@ -178,7 +178,7 @@ def main(args) -> dict:
             optimizer.step()
 
         # a smaller sample of users per epoch keeps ranking every game affordable
-        scores = evaluate(validation, max_users=2_000) if ranking else evaluate(validation)
+        scores = evaluate(validation, max_users=args.validation_users) if ranking else evaluate(validation)
         history.append(scores[key])
         print(f"epoch {epoch}: validation {describe(scores)}", flush=True)
         if best is None or scores[key] > best[key]:
@@ -230,6 +230,8 @@ if __name__ == "__main__":
     # training
     parser.add_argument("--objective", choices=["rating", "ranking"], default="rating")
     parser.add_argument("--negatives", type=int, default=256)
+    parser.add_argument("--validation-users", type=int, default=2_000,
+                        help="for ranking: how many validation users each epoch is judged on")
     parser.add_argument("--negative-popularity", type=float, default=0.0,
                         help="draw negatives in proportion to (ratings + 1) to this power; 0 is uniform, 1 is by popularity")
     parser.add_argument("--diversity", type=float, default=0.0,
