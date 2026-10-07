@@ -1,7 +1,10 @@
 /* BeerCSS gives buttons a display of their own, which would show a hidden one */
 [hidden] { display: none !important; }
 main.responsive { max-inline-size: 52rem; }
-#recommendations li > .max { min-inline-size: 0; }
+/* a long title wraps onto more lines instead of running under the buttons */
+#recommendations li > .max, #gem nav > .max { min-inline-size: 0; flex: 1 1 12rem; }
+#recommendations li > .max *, #gem nav > .max * { white-space: normal; overflow-wrap: anywhere; }
+#recommendations li > button, #gem button { flex: none; }
 /* line the arrow up with the left edge of the text below it */
 #back { padding-inline-start: 0; }
 #social a + a { margin-inline-start: 0.5rem; }
@@ -11,3 +14,6 @@ details > summary { cursor: pointer; margin-block: 0.5rem; }
     #recommendations li { flex-wrap: wrap; }
     #recommendations li > .max { flex-basis: 100%; }
 }
+/* a chip with a long title grows taller instead of running off a phone screen */
+nav.wrap > .chip { max-inline-size: 100%; block-size: auto; min-block-size: 2rem; padding-block: 0.25rem; }
+nav.wrap > .chip > span { white-space: normal; text-align: start; }
