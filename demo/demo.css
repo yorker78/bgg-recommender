@@ -1,0 +1,10 @@
+/* BeerCSS gives buttons a display of their own, which would show a hidden one */
+[hidden] { display: none !important; }
+main.responsive { max-inline-size: 52rem; }
+#recommendations li > .max { min-inline-size: 0; }
+#social img { inline-size: 1.5rem; block-size: 1.5rem; }
+details > summary { cursor: pointer; margin-block: 0.5rem; }
+@media (max-width: 600px) {
+    #recommendations li { flex-wrap: wrap; }
+    #recommendations li > .max { flex-basis: 100%; }
+}

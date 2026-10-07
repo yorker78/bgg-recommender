@@ -1,0 +1,48 @@
+# Publishes the demo page to GitHub Pages. Pages has to be set to deploy from
+# GitHub Actions (Settings > Pages > Source).
+#
+# The exported model is not in the repository. It is attached to the release
+# tagged "demo-data" (written by `python -m bgg.export <run>`), and fetched here.
+name: Demo
+
+on:
+    push:
+        branches: [main]
+        paths: [demo/**, .github/workflows/demo.yml]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: pages
+    cancel-in-progress: true
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - run: node --test demo/recommend.test.js demo/select.test.js
+            - name: Collect the page and the exported model
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  mkdir -p site/data
+                  cp demo/index.html demo/*.css demo/app.js demo/recommend.js demo/select.js site/
+                  gh release download demo-data --repo "$GITHUB_REPOSITORY" --dir site/data --pattern model.json --pattern game_vectors.bin
+            - uses: actions/upload-pages-artifact@v3
+              with:
+                  path: site
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - id: deployment
+              uses: actions/deploy-pages@v4

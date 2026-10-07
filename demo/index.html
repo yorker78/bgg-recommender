@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Board Game Recommender | Billy York</title>
+        <meta
+            name="description"
+            content="Pick a few board games you like and a neural network trained on BoardGameGeek ratings recommends others, running entirely in your browser." />
+        <link rel="icon" type="image/png" sizes="32x32" href="https://www.billyyork.com/favicon-32.png" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@4.0.20/dist/cdn/beer.min.css" />
+        <!-- the portfolio's theme, which has to load after BeerCSS to override its default -->
+        <link rel="stylesheet" href="colors.css" />
+        <link rel="stylesheet" href="demo.css" />
+        <script type="module" src="https://cdn.jsdelivr.net/npm/beercss@4.0.20/dist/cdn/beer.min.js"></script>
+        <script type="module" src="app.js"></script>
+    </head>
+    <body>
+        <main class="responsive">
+            <nav>
+                <a class="button transparent" href="https://www.billyyork.com/"><i>arrow_back</i><span>Billy York</span></a>
+                <div class="max"></div>
+                <a class="button border" id="code-link" hidden target="_blank" rel="noreferrer"><i>code</i><span>View the code</span></a>
+            </nav>
+            <h3>Board Game Recommender</h3>
+            <p>
+                Pick a few games you like. A two-tower neural network, trained on 19 million BoardGameGeek ratings,
+                turns your picks into one "ideal game" and finds the games closest to it. It runs entirely in your
+                browser.
+            </p>
+
+            <h6>Start with a set</h6>
+            <nav class="wrap" id="starters"></nav>
+
+            <div class="field label prefix border round">
+                <i>search</i>
+                <input id="search" type="search" autocomplete="off" />
+                <label for="search">Add a game you like</label>
+            </div>
+            <p class="small-text" id="suggestions-label"></p>
+            <nav class="wrap" id="suggestions"></nav>
+
+            <h6 id="picks-label">Your picks</h6>
+            <nav class="wrap" id="picks"></nav>
+            <details id="hidden-box" hidden>
+                <summary id="hidden-label"></summary>
+                <nav class="wrap" id="hidden"></nav>
+            </details>
+
+            <div id="results" hidden>
+                <div class="space"></div>
+                <article class="tertiary-container" id="gem" hidden></article>
+                <h5>Recommended for you</h5>
+                <nav>
+                    <label class="switch">
+                        <input id="hide-known" type="checkbox" />
+                        <span></span>
+                    </label>
+                    <span>Hide the 100 best-known games</span>
+                </nav>
+                <ul class="list border" id="recommendations"></ul>
+            </div>
+            <p id="status">Loading the model...</p>
+        </main>
+        <footer class="transparent">
+            <div class="grid">
+                <span class="s12 m7 small-text">
+                    © 2026 Billy York. Game data and the model built from it come from the
+                    <a class="link" target="_blank" rel="noreferrer" href="https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek">Board Games Database from BoardGameGeek</a>
+                    by threnjen, shared here under
+                    <a class="link" target="_blank" rel="noreferrer" href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>.
+                    Not affiliated with BoardGameGeek.
+                </span>
+                <span class="s12 m5 right-align middle-align" id="social"></span>
+            </div>
+        </footer>
+    </body>
+</html>

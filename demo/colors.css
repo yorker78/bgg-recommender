@@ -1,0 +1,115 @@
+/*
+ * Theme built from Nile Green #007A33, Carnation White #FFFEF6,
+ * Royal Purple #582C83, and Desert Gold #EAAA00 with Material's color
+ * utilities, keeping each color at full strength instead of the theme
+ * builder's muted default.
+ *
+ * Light: warm off-white surfaces, Nile Green primary, Royal Purple
+ * secondary (the nav's selected pill), Desert Gold tertiary.
+ * Dark: the palette swaps. Surfaces are a deep Nile Green, and text and
+ * primary buttons are Carnation White.
+ */
+:root,
+body.light {
+    --primary: #006e2d;
+    --surface-tint: #006e2d;
+    --on-primary: #ffffff;
+    --primary-container: #93f9a2;
+    --on-primary-container: #005320;
+    --secondary: #764aa1;
+    --on-secondary: #ffffff;
+    --secondary-container: #f0dbff;
+    --on-secondary-container: #5d3188;
+    --tertiary: #7c5800;
+    --on-tertiary: #ffffff;
+    --tertiary-container: #ffdea6;
+    --on-tertiary-container: #5e4200;
+    --error: #ba1a1a;
+    --on-error: #ffffff;
+    --error-container: #ffdad6;
+    --on-error-container: #93000a;
+    --background: #fff8f3;
+    --on-background: #1e1b17;
+    --surface: #fff8f3;
+    --on-surface: #1e1b17;
+    --surface-variant: #ece1d4;
+    --on-surface-variant: #4c463c;
+    --outline: #7e766b;
+    --outline-variant: #cfc5b8;
+    --shadow: #000000;
+    --scrim: #000000;
+    --inverse-surface: #33302c;
+    --inverse-on-surface: #f7efe9;
+    --inverse-primary: #77dc88;
+    --primary-fixed: #93f9a2;
+    --on-primary-fixed: #002109;
+    --primary-fixed-dim: #77dc88;
+    --on-primary-fixed-variant: #005320;
+    --secondary-fixed: #f0dbff;
+    --on-secondary-fixed: #2c0051;
+    --secondary-fixed-dim: #ddb8ff;
+    --on-secondary-fixed-variant: #5d3188;
+    --tertiary-fixed: #ffdea6;
+    --on-tertiary-fixed: #271900;
+    --tertiary-fixed-dim: #febb21;
+    --on-tertiary-fixed-variant: #5e4200;
+    --surface-dim: #e0d9d2;
+    --surface-bright: #fff8f3;
+    --surface-container-lowest: #ffffff;
+    --surface-container-low: #faf2ec;
+    --surface-container: #f4ede6;
+    --surface-container-high: #eee7e0;
+    --surface-container-highest: #e8e1db;
+}
+
+body.dark {
+    --primary: #fffef6;
+    --surface-tint: #fffef6;
+    --on-primary: #0a2011;
+    --primary-container: #005320;
+    --on-primary-container: #93f9a2;
+    --secondary: #ddb8ff;
+    --on-secondary: #45166f;
+    --secondary-container: #5d3188;
+    --on-secondary-container: #f0dbff;
+    --tertiary: #febb21;
+    --on-tertiary: #412d00;
+    --tertiary-container: #5e4200;
+    --on-tertiary-container: #ffdea6;
+    --error: #ffb4ab;
+    --on-error: #690005;
+    --error-container: #93000a;
+    --on-error-container: #ffdad6;
+    --background: #0a2011;
+    --on-background: #f9f3e5;
+    --surface: #0a2011;
+    --on-surface: #f9f3e5;
+    --surface-variant: #304d37;
+    --on-surface-variant: #d1ccbe;
+    --outline: #79987e;
+    --outline-variant: #304d37;
+    --shadow: #000000;
+    --scrim: #000000;
+    --inverse-surface: #cfe9d1;
+    --inverse-on-surface: #203525;
+    --inverse-primary: #006e2d;
+    --primary-fixed: #93f9a2;
+    --on-primary-fixed: #002109;
+    --primary-fixed-dim: #77dc88;
+    --on-primary-fixed-variant: #005320;
+    --secondary-fixed: #f0dbff;
+    --on-secondary-fixed: #2c0051;
+    --secondary-fixed-dim: #ddb8ff;
+    --on-secondary-fixed-variant: #5d3188;
+    --tertiary-fixed: #ffdea6;
+    --on-tertiary-fixed: #271900;
+    --tertiary-fixed-dim: #febb21;
+    --on-tertiary-fixed-variant: #5e4200;
+    --surface-dim: #0a2011;
+    --surface-bright: #283e2d;
+    --surface-container-lowest: #051a0c;
+    --surface-container-low: #0f2415;
+    --surface-container: #132819;
+    --surface-container-high: #192f1f;
+    --surface-container-highest: #223727;
+}
