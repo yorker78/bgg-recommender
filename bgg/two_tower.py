@@ -9,17 +9,27 @@ class TwoTower(nn.Module):
                  *,
                  embedding_size: int = 32,
                  hidden_size: int = 64,
-                 cosine: bool = False):
+                 cosine: bool = False,
+                 families: Tensor | None = None,
+                 n_families: int = 0):
         super().__init__()
         self.register_buffer("game_features", game_features)
         self.register_buffer("mean_rating", torch.tensor(mean_rating))
+        self.register_buffer('families', families)
         self.game_tower = nn.Linear(game_features.shape[1], embedding_size)
         nn.init.normal_(self.game_tower.weight, std=0.1)
         self.user_tower = nn.Sequential(nn.Linear(2 * embedding_size + 1, hidden_size), nn.ReLU(), nn.Linear(hidden_size, embedding_size))
         self.cosine = cosine
         if cosine:
             self.temperature = nn.Parameter(torch.tensor(10.0))
-        
+        if families is None:
+            self.family = None
+        else:
+            self.family = nn.Embedding(n_families, embedding_size, padding_idx=0)
+            nn.init.normal_(self.family.weight, std=0.1)
+            self.family.weight.data[0] = 0
+
+
     def forward(self,
                 history_items: Tensor,
                 history_ratings: Tensor,
@@ -34,7 +44,10 @@ class TwoTower(nn.Module):
         return scores * self.temperature if self.cosine else scores
     
     def game_vectors(self, items: Tensor) -> Tensor:
-        return self.game_tower(self.game_features[items])
+        vectors = self.game_tower(self.game_features[items])
+        if self.family is not None:
+            vectors = vectors + self.family(self.families[items])
+        return vectors
     
     def user_vectors(self,
                      history_items: Tensor,

@@ -21,13 +21,15 @@ from bgg.baselines import BiasModel
 from bgg.batches import game_index, to_table, training_batches
 from bgg.data import hold_out_validation_users, load_ratings, split
 from bgg.evaluate import score_model
-from bgg.features import load_game_tensors
+from bgg.features import load_family_ids, load_game_tensors
 from bgg.retrieval import score_retrieval
 
 PLAYER_COUNT_FEATURES = ("GoodAt", "PlayerCountRatio", "MinPlayers", "MaxPlayers", "BestPlayers")
 
 
-def build_model(args, train_mean: float, features, creators, n_creator_ids) -> torch.nn.Module:
+def build_model(args, train_mean: float, features, creators, n_creator_ids, families=None, n_families=0) -> torch.nn.Module:
+    if families is not None and args.model != "two-tower":
+        raise ValueError("--use-family is only built into the two-tower model")
     if args.model == "bias":
         return BiasModel(features.shape[0], train_mean, user_offset=args.user_offset)
     if args.model == "two-tower":
@@ -39,6 +41,8 @@ def build_model(args, train_mean: float, features, creators, n_creator_ids) -> t
             embedding_size=args.embedding_size,
             hidden_size=(args.hidden_sizes or [64])[0],
             cosine=args.cosine,
+            families=families,
+            n_families=n_families,
         )
     if args.model == "multi-tower":
         from bgg.two_tower import MultiTower
@@ -123,6 +127,7 @@ def main(args) -> dict:
         args.data_dir, drop, descriptions=args.use_descriptions, ratios=args.use_ratios
     )
     index = game_index(item_ids)
+    families, n_families = load_family_ids(args.data_dir, item_ids) if args.use_family else (None, 0)
 
     train, query, test = split(load_ratings(args.data_dir))
     train, validation_query, validation_test = hold_out_validation_users(train)
@@ -136,7 +141,7 @@ def main(args) -> dict:
     held_out = list(tables(query, test))
 
     model = build_model(
-        args, train["rating"].mean(), features.to(device), creators.to(device), n_creator_ids
+        args, train["rating"].mean(), features.to(device), creators.to(device), n_creator_ids, families, n_families
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     weights = Path("runs") / f"{args.name}.pt"
@@ -223,6 +228,7 @@ if __name__ == "__main__":
     parser.add_argument("--drop-player-counts", action="store_true")
     parser.add_argument("--use-descriptions", action="store_true")
     parser.add_argument("--use-ratios", action="store_true")
+    parser.add_argument("--use-family", action="store_true", help="two-tower only: a learned vector per game series")
     parser.add_argument("--embedding-size", type=int, default=32)
     parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[])
     parser.add_argument("--cosine", action="store_true")

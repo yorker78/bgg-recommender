@@ -131,6 +131,8 @@ def models_to_check():
         return
     yield "two tower", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16)
     yield "two tower, cosine", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16, cosine=True)
+    in_families = torch.randint(0, 4, (20,))  # 0 is "no family"
+    yield "two tower with families", lambda: TwoTower(described, 6.0, embedding_size=8, hidden_size=16, cosine=True, families=in_families, n_families=4)
     try:
         from bgg.two_tower import MultiTower
     except ImportError:
@@ -435,3 +437,25 @@ def test_ranking_loss_draws_negatives_by_weight():
     loss = ranking_loss(Recorder(), batch, n_games=20, n_negatives=5, generator=torch.Generator().manual_seed(0), weights=weights)
     assert torch.isfinite(loss)
     assert seen[0][:, 0].tolist() == [1, 2, 3] and (seen[0][:, 1:] == 7).all()
+
+
+def test_a_game_without_a_family_keeps_its_content_vector():
+    two_tower = pytest.importorskip("bgg.two_tower")
+    features = torch.randn(4, 3)
+    model = two_tower.TwoTower(features, 6.0, embedding_size=8, hidden_size=16, families=torch.tensor([0, 1, 1, 0]), n_families=2)
+    vectors, content = model.game_vectors(torch.arange(4)[None])[0], model.game_tower(features)
+    assert torch.equal(vectors[[0, 3]], content[[0, 3]])
+    assert not torch.equal(vectors[1], content[1])
+    assert torch.allclose(vectors[1] - content[1], vectors[2] - content[2], atol=1e-6)  # one series, one shared vector
+
+
+def test_family_ids_follow_the_order_of_the_feature_table(tmp_path):
+    from bgg.features import build_game_families, load_family_ids
+
+    (tmp_path / "games.csv").write_text("BGGId,Family\n" + "".join(f"{i},{f}\n" for i, f in enumerate(["B", "A", "", "A", "B", "A", "B", "C"])))
+    per_game, vocabulary = build_game_families(tmp_path)
+    assert vocabulary["Family"].to_list() == ["A", "B"]  # C has one game, below the minimum of three
+    per_game.write_parquet(tmp_path / "game_families.parquet")
+    vocabulary.write_parquet(tmp_path / "families.parquet")
+    ids, n_ids = load_family_ids(tmp_path, pl.Series([7, 3, 2, 0, 99]))
+    assert ids.tolist() == [0, 1, 0, 2, 0] and n_ids == 3 and ids.dtype == torch.long

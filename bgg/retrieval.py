@@ -21,7 +21,7 @@ from torch import Tensor
 from bgg.baselines import Popularity
 from bgg.batches import RatingTable, _gather, game_index, to_table
 from bgg.data import hold_out_validation_users, load_ratings, split
-from bgg.features import load_game_tensors
+from bgg.features import load_family_ids, load_game_tensors
 
 
 @torch.no_grad()
@@ -165,7 +165,7 @@ if __name__ == "__main__":
         runs[record["name"]] = record["settings"]  # the latest run of a name wins, as its weights did
     # settings a run may predate
     defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False, interests=4,
-                    use_descriptions=False, use_ratios=False)
+                    use_descriptions=False, use_ratios=False, use_family=False)
 
     train, query, test = split(load_ratings(args.data_dir))
     train, _, _ = hold_out_validation_users(train)
@@ -181,7 +181,8 @@ if __name__ == "__main__":
         if name == "popularity":
             model = Popularity(counts)
         else:
-            model = build_model(settings, 0.0, features, creators, n_creator_ids)
+            families = load_family_ids(args.data_dir, item_ids) if settings.use_family else (None, 0)
+            model = build_model(settings, 0.0, features, creators, n_creator_ids, *families)
             state = torch.load(Path("runs") / f"{name}.pt", map_location="cpu")
             # strict=False: older runs predate the creator_mask buffer, which is rebuilt anyway
             problems = model.load_state_dict(state, strict=False)

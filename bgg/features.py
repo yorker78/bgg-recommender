@@ -143,6 +143,15 @@ def load_game_tensors(
     return table["item_id"], features, names, creators, n_creator_ids
 
 
+def load_family_ids(data_dir: str | Path, item_ids: pl.Series) -> tuple[Tensor, int]:
+    """Each game's family id in the order of `item_ids`, and how many ids there are counting 0 for "no family"."""
+    data_dir = Path(data_dir)
+    per_game = pl.DataFrame({"item_id": item_ids}).join(
+        pl.read_parquet(data_dir / "game_families.parquet"), on="item_id", how="left", maintain_order="left"
+    )
+    return per_game["family_id"].fill_null(0).to_torch(), pl.read_parquet(data_dir / "families.parquet").height + 1
+
+
 def build_game_creators(data_dir: str | Path) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Returns (creators per game, what each creator id stands for).
 
@@ -175,6 +184,15 @@ def build_game_creators(data_dir: str | Path) -> tuple[pl.DataFrame, pl.DataFram
     )
     return per_game, vocabulary
 
+def build_game_families(data_dir: str | Path, min_games: int = 3) -> tuple[pl.DataFrame, pl.DataFrame]:
+    data_dir = Path(data_dir)
+    games = pl.read_csv(data_dir / 'games.csv', columns=['BGGId', 'Family'])
+    counts = games.drop_nulls('Family').group_by('Family').len()
+    counts = counts.filter(pl.col('len') >= min_games).sort('Family')
+    vocabulary = counts.with_row_index('family_id', offset=1)
+    per_game = games.join(vocabulary, on='Family', how='left').with_columns(pl.col('family_id').cast(pl.Int64).fill_null(0)).select(item_id='BGGId', family_id='family_id')
+    return per_game, vocabulary
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -190,3 +208,8 @@ if __name__ == "__main__":
     per_game.write_parquet(Path(args.data_dir) / "game_creators.parquet")
     vocabulary.write_parquet(Path(args.data_dir) / "creators.parquet")
     print(f"wrote game_creators.parquet and creators.parquet: {vocabulary.height:,} creators")
+
+    per_game, vocabulary = build_game_families(args.data_dir)
+    per_game.write_parquet(Path(args.data_dir) / "game_families.parquet")
+    vocabulary.write_parquet(Path(args.data_dir) / "families.parquet")
+    print(f'wrote game_families.parquet and families.parquet: {vocabulary.height:,} families')
