@@ -21,7 +21,7 @@ def export_demo(run_name, data_dir, out_dir):
     w2 = model.user_tower[2].weight.tolist()
     b2 = model.user_tower[2].bias.tolist()
 
-    games = pl.DataFrame({'BGGId': item_ids}).join(pl.read_csv(data_dir / 'games.csv', columns=['BGGId', 'Name', 'YearPublished', 'NumUserRatings', 'AvgRating']), on='BGGId', how='left', maintain_order='left')
+    games = pl.DataFrame({'BGGId': item_ids}).join(pl.read_csv(data_dir / 'games.csv', columns=['BGGId', 'Name', 'YearPublished', 'NumUserRatings', 'AvgRating', 'GameWeight', 'MinPlayers', 'MaxPlayers', 'MfgPlaytime', 'Family', 'Cat:Thematic', 'Cat:Strategy', 'Cat:War', 'Cat:Family', 'Cat:CGS', 'Cat:Abstract', 'Cat:Party', 'Cat:Childrens']), on='BGGId', how='left', maintain_order='left')
 
     with open(out_dir / 'model.json', 'w') as f:
         json.dump({'embedding_size': vectors.shape[1],
@@ -32,7 +32,13 @@ def export_demo(run_name, data_dir, out_dir):
                     'name': games['Name'].to_list(),
                     'year': games['YearPublished'].to_list(),
                     'ratings': games['NumUserRatings'].to_list(),
-                    'average': games['AvgRating'].to_list()
+                    'average': games['AvgRating'].to_list(),
+                    'weight': games['GameWeight'].to_list(),
+                    'min_players': games['MinPlayers'].to_list(),
+                    'max_players': games['MaxPlayers'].to_list(),
+                    'minutes': games['MfgPlaytime'].to_list(),
+                    'family': games['Family'].to_list(),
+                    'categories': {name: games[f'Cat:{name}'].to_list() for name in ['Thematic', 'Strategy', 'War', 'Family', 'CGS', 'Abstract', 'Party', 'Childrens']},
                 }}, f)
     
 if __name__ == '__main__':
