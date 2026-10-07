@@ -227,3 +227,6 @@ runs/
 
 # one line per training run, kept on the machine that trains
 results.jsonl
+
+# the demo's exported model, published from a release rather than committed
+demo/data/

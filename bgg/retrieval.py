@@ -143,10 +143,36 @@ def taste_variety(query: RatingTable, categories: Tensor, liked: float = 8.0, mi
     return torch.where((n_liked >= min_liked) & (counts.sum(1) > 0), variety, torch.nan)
 
 
-if __name__ == "__main__":
+def load_run(name: str, data_dir: str | Path = "data"):
+    """A trained model, by the name its run was given: rebuilt from that run's
+    settings in results.jsonl and its weights in runs/. Returns (model, item ids),
+    the ids in the order the model numbers its games.
+    """
     # imported here because bgg.train uses score_retrieval
     from bgg.train import PLAYER_COUNT_FEATURES, build_model
 
+    # settings a run may predate
+    settings = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False, interests=4,
+                    use_descriptions=False, use_ratios=False, use_family=False)
+    for line in open("results.jsonl"):
+        record = json.loads(line)
+        if record["name"] == name:
+            settings |= record["settings"]  # the latest run of a name wins, as its weights did
+    settings = argparse.Namespace(**settings)
+    drop = PLAYER_COUNT_FEATURES if getattr(settings, "drop_player_counts", False) else ()
+    item_ids, features, _, creators, n_creator_ids = load_game_tensors(
+        data_dir, drop, descriptions=settings.use_descriptions, ratios=settings.use_ratios
+    )
+    families = load_family_ids(data_dir, item_ids) if settings.use_family else (None, 0)
+    model = build_model(settings, 0.0, features, creators, n_creator_ids, *families)
+    state = torch.load(Path("runs") / f"{name}.pt", map_location="cpu")
+    # strict=False: older runs predate the creator_mask buffer, which is rebuilt anyway
+    problems = model.load_state_dict(state, strict=False)
+    assert not problems.unexpected_keys and set(problems.missing_keys) <= {"creator_mask"}, problems
+    return model, item_ids
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="+", help="runs from results.jsonl, or 'popularity'")
     parser.add_argument("--data-dir", default="data")
@@ -159,34 +185,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
     device = torch.device(args.device)
 
-    runs = {}
-    for line in open("results.jsonl"):
-        record = json.loads(line)
-        runs[record["name"]] = record["settings"]  # the latest run of a name wins, as its weights did
-    # settings a run may predate
-    defaults = dict(use_seen=False, use_context=False, use_attention=False, embedding_size=32, hidden_sizes=[], cosine=False, interests=4,
-                    use_descriptions=False, use_ratios=False, use_family=False)
-
     train, query, test = split(load_ratings(args.data_dir))
     train, _, _ = hold_out_validation_users(train)
     users = test["user_id"].unique().sort()
     for name in args.names:
-        settings = argparse.Namespace(**(defaults | runs.get(name, {})))
-        drop = PLAYER_COUNT_FEATURES if getattr(settings, "drop_player_counts", False) else ()
-        item_ids, features, _, creators, n_creator_ids = load_game_tensors(
-            args.data_dir, drop, descriptions=settings.use_descriptions, ratios=settings.use_ratios
-        )
+        if name == "popularity":
+            item_ids = load_game_tensors(args.data_dir)[0]
+        else:
+            model, item_ids = load_run(name, args.data_dir)
         index = game_index(item_ids)
         counts = index.join(train.group_by("item_id").len(), on="item_id", how="left").sort("item")["len"].fill_null(0).to_torch()
         if name == "popularity":
             model = Popularity(counts)
-        else:
-            families = load_family_ids(args.data_dir, item_ids) if settings.use_family else (None, 0)
-            model = build_model(settings, 0.0, features, creators, n_creator_ids, *families)
-            state = torch.load(Path("runs") / f"{name}.pt", map_location="cpu")
-            # strict=False: older runs predate the creator_mask buffer, which is rebuilt anyway
-            problems = model.load_state_dict(state, strict=False)
-            assert not problems.unexpected_keys and set(problems.missing_keys) <= {"creator_mask"}, problems
         query_table, test_table = (to_table(part, index, users).to(device) for part in (query, test))
         model.to(device)
 

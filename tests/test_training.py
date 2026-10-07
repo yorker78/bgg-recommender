@@ -459,3 +459,37 @@ def test_family_ids_follow_the_order_of_the_feature_table(tmp_path):
     vocabulary.write_parquet(tmp_path / "families.parquet")
     ids, n_ids = load_family_ids(tmp_path, pl.Series([7, 3, 2, 0, 99]))
     assert ids.tolist() == [0, 1, 0, 2, 0] and n_ids == 3 and ids.dtype == torch.long
+
+
+def test_exported_demo_files_reproduce_the_models_top_ten(tmp_path, monkeypatch):
+    import json
+
+    import numpy as np
+
+    export = pytest.importorskip("bgg.export")
+    from bgg.two_tower import TwoTower
+
+    torch.manual_seed(0)
+    n = 40
+    model = TwoTower(torch.randn(n, 6), 6.5, embedding_size=8, hidden_size=16, cosine=True, families=torch.randint(0, 3, (n,)), n_families=3)
+    item_ids = pl.Series(range(100, 100 + n))
+    monkeypatch.setattr(export, "load_run", lambda name, data_dir: (model, item_ids), raising=False)
+    # the csv lists the games backwards, so details copied in file order would be caught
+    (tmp_path / "games.csv").write_text(
+        "BGGId,Name,YearPublished,NumUserRatings,AvgRating\n" + "".join(f"{i},Game {i},2000,{i},7.0\n" for i in reversed(item_ids.to_list()))
+    )
+    export.export_demo("any", tmp_path, tmp_path / "out")
+    saved = json.load(open(tmp_path / "out" / "model.json"))
+    vectors = np.fromfile(tmp_path / "out" / "game_vectors.bin", dtype="float32").reshape(n, saved["embedding_size"])
+    assert saved["games"]["id"] == item_ids.to_list() and saved["games"]["name"][:2] == ["Game 100", "Game 101"]
+
+    # what the page does with a visitor's picks, each counted as a rating of 9
+    picks = [3, 17, 25]
+    average = vectors[picks].mean(0)
+    tower = {key: np.array(value) for key, value in saved["tower"].items()}
+    inputs = np.concatenate([average * (9.0 - saved["mean_rating"]), average, [np.log1p(len(picks))]])
+    ideal = tower["w2"] @ np.maximum(tower["w1"] @ inputs + tower["b1"], 0) + tower["b2"]
+    scores = (vectors / np.linalg.norm(vectors, axis=1, keepdims=True)) @ (ideal / np.linalg.norm(ideal))
+    with torch.no_grad():
+        expected = model.eval()(torch.tensor([picks]), torch.full((1, 3), 9.0), torch.ones(1, 3, dtype=torch.bool), torch.arange(n)[None])[0]
+    assert np.argsort(-scores)[:10].tolist() == expected.argsort(descending=True)[:10].tolist()
