@@ -6,7 +6,8 @@ main.responsive { max-inline-size: 52rem; }
 #back { padding-inline-start: 0; }
 #social a + a { margin-inline-start: 0.5rem; }
 details > summary { cursor: pointer; margin-block: 0.5rem; }
-@media (max-width: 600px) {
+#gem nav { flex-wrap: wrap; }
+@media (max-width: 700px) {
     #recommendations li { flex-wrap: wrap; }
     #recommendations li > .max { flex-basis: 100%; }
 }

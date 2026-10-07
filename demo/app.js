@@ -1,7 +1,7 @@
 // The page: what the visitor has picked and hidden, and drawing it. The model's
 // arithmetic is in recommend.js and the choosing of what to show in select.js.
 import { scoreAll, topGames, unitVectors, userVector } from './recommend.js'
-import { byRatings, closestPick, hiddenGem, isCrude, search } from './select.js'
+import { byRatings, closestPick, glance, hiddenGem, isCrude, search } from './select.js'
 
 // set when the repository is public
 const CODE_URL = ''
@@ -45,19 +45,20 @@ async function load() {
     }
 }
 
-const state = { picks: [], hidden: [], query: '', hideKnown: false }
+const state = { picks: [], hidden: [], saved: [], query: '', hideKnown: false }
 let data
 
 // The lists live in the address as BoardGameGeek ids, so a reload or a shared link keeps them.
 function remember() {
     const ids = (list) => list.map((game) => data.games.id[game]).join(',')
-    history.replaceState(null, '', `#picks=${ids(state.picks)}&hidden=${ids(state.hidden)}`)
+    history.replaceState(null, '', `#picks=${ids(state.picks)}&hidden=${ids(state.hidden)}&saved=${ids(state.saved)}`)
 }
 function recall() {
     const saved = new URLSearchParams(location.hash.slice(1))
     const games = (key) => (saved.get(key) || '').split(',').map((id) => data.games.id.indexOf(Number(id))).filter((game) => game >= 0)
     state.picks = games('picks')
     state.hidden = games('hidden')
+    state.saved = games('saved')
 }
 
 function update(change) {
@@ -65,8 +66,10 @@ function update(change) {
     remember()
     draw()
 }
+const without = (list, game) => list.filter((other) => other !== game)
 const pick = (game) => update(() => {
-    state.hidden = state.hidden.filter((other) => other !== game)
+    state.hidden = without(state.hidden, game)
+    state.saved = without(state.saved, game)
     if (!state.picks.includes(game)) state.picks.push(game)
     state.query = ''
     $('search').value = ''
@@ -76,7 +79,11 @@ const hide = (game) => update(() => {
     state.picks = state.picks.filter((other) => other !== game)
     if (!state.hidden.includes(game)) state.hidden.push(game)
 })
-const restore = (game) => update(() => (state.hidden = state.hidden.filter((other) => other !== game)))
+const restore = (game) => update(() => (state.hidden = without(state.hidden, game)))
+// "I have heard of this and think I would like it": kept as a shortlist. The model has
+// no such signal to learn from, so it does not change the scores; it only clears the slot.
+const save = (game) => update(() => state.saved.push(game))
+const unsave = (game) => update(() => (state.saved = without(state.saved, game)))
 
 function title(game) {
     const year = data.games.year[game]
@@ -117,13 +124,14 @@ function recommendation(game) {
                 el('h6', { class: 'small' }, title(game))),
             el('div', { class: 'small-text' }, details(game)),
             el('div', { class: 'small-text' }, `Closest to your pick ${data.games.name[because]}`)),
-        el('button', { class: 'border small', onclick: () => pick(game) }, icon('thumb_up'), el('span', {}, 'Played it, liked it')),
-        el('button', { class: 'border small', onclick: () => hide(game) }, icon('visibility_off'), el('span', {}, 'Not for me')))
+        el('button', { class: 'border small', title: 'I have played this and liked it: add it to my picks', onclick: () => pick(game) }, icon('thumb_up'), el('span', {}, 'Liked it')),
+        el('button', { class: 'border small', title: 'I think I would like this: add it to my shortlist', onclick: () => save(game) }, icon('bookmark_add'), el('span', {}, 'Want to try')),
+        el('button', { class: 'border small', title: 'Hide this game', onclick: () => hide(game) }, icon('visibility_off'), el('span', {}, 'Not for me')))
 }
 
 function draw() {
     const { games, order, rank, unit, model, lowerNames, crude } = data
-    const taken = new Set([...state.picks, ...state.hidden])
+    const taken = new Set([...state.picks, ...state.hidden, ...state.saved])
 
     let recommended = []
     let ranked = []
@@ -138,14 +146,14 @@ function draw() {
     let offered
     if (state.query.trim()) {
         offered = search(lowerNames, games.ratings, state.query, taken, 8)
-        $('suggestions-label').textContent = offered.length ? '' : 'No game by that name.'
+        $('suggestions-label').textContent = offered.length ? 'Tap a game to add it:' : 'No game by that name. The data ends in 2021, so newer games are missing.'
     } else if (state.picks.length) {
         const shown = new Set(recommended)
         offered = ranked.filter((game) => rank[game] < FAMILIAR && !shown.has(game)).slice(0, 8)
-        $('suggestions-label').textContent = 'Similar to your picks, that you might have also played:'
+        $('suggestions-label').textContent = 'Or tap one to add it. Similar to your picks, that you might have also played:'
     } else {
         offered = order.slice(0, 16)
-        $('suggestions-label').textContent = 'Or tap a well-known game:'
+        $('suggestions-label').textContent = 'Or tap a well-known game to add it:'
     }
     $('suggestions').replaceChildren(...offered.map((game) => chip(game, pick, 'add')))
 
@@ -153,19 +161,25 @@ function draw() {
     $('picks-label').textContent = n ? `Your picks (${n})` : 'Your picks'
     $('picks').replaceChildren(...(n
         ? state.picks.map((game) => chip(game, hide, 'close'))
-        : [el('span', { class: 'small-text' }, 'Nothing yet. Tap a set above, or search for a game.')]))
+        : [el('span', { class: 'small-text' }, 'Nothing yet. Search for a game, tap a suggestion, or add a set.')]))
+    $('clear').hidden = !n
     $('hidden-box').hidden = !state.hidden.length
     $('hidden-label').textContent = `Hidden from recommendations (${state.hidden.length})`
     $('hidden').replaceChildren(...state.hidden.map((game) => chip(game, restore, 'undo')))
 
     $('results').hidden = !n
-    $('status').textContent = !n ? '' : n < 10
+    if (!n) return
+    $('glance').textContent = glance(games, state.picks)
+    $('status').textContent = n < 10
         ? `${n} pick${n === 1 ? '' : 's'} so far. The recommendations sharpen as you add more; ten is a good number.`
         : ''
-    if (!n) return
+    $('saved-label').textContent = state.saved.length
+        ? 'Games you want to try. Tap one to take it off the list.'
+        : 'Tap "Want to try" on a recommendation to keep it here.'
+    $('saved').replaceChildren(...state.saved.map((game) => chip(game, unsave, 'bookmark')))
     $('recommendations').replaceChildren(...recommended.map(recommendation))
 
-    const gem = hiddenGem(ranked, games, rank, state.picks, new Set([...taken, ...recommended]))
+    const gem = hiddenGem(ranked, games, order, rank, state.picks, new Set([...taken, ...recommended]))
     $('gem').hidden = gem === undefined
     if (gem !== undefined) {
         $('gem').replaceChildren(
@@ -178,6 +192,7 @@ function draw() {
                     el('div', { class: 'small-text' }, details(gem)),
                     el('div', { class: 'small-text' },
                         `Rated ${games.average[gem].toFixed(1)} by ${games.ratings[gem].toLocaleString()} people. Closest to your pick ${games.name[closestPick(unit, model.d, gem, state.picks)]}`)),
+                el('button', { class: 'border small', onclick: () => save(gem) }, icon('bookmark_add'), el('span', {}, 'Want to try')),
                 el('button', { class: 'border small', onclick: () => hide(gem) }, icon('visibility_off'), el('span', {}, 'Not for me'))))
     }
 }
@@ -215,20 +230,28 @@ async function start() {
     try {
         data = await load()
     } catch (error) {
-        $('status').textContent = 'The model could not be loaded. Please try again later.'
+        $('loading').textContent = 'The model could not be loaded. Please try again later.'
         throw error
     }
     // a starter set fills in its games, most-rated edition of each name
     $('starters').replaceChildren(...Object.entries(STARTERS).map(([label, names]) => {
         const set = names.map((name) => data.order.find((game) => data.games.name[game] === name)).filter((game) => game !== undefined)
+        // added to whatever is already picked
         return el('button', { class: 'chip fill', onclick: () => update(() => {
-            state.picks = set.slice()
+            state.picks = [...new Set([...state.picks, ...set])]
             state.hidden = state.hidden.filter((game) => !set.includes(game))
-        }) }, el('span', {}, label))
+            state.saved = state.saved.filter((game) => !set.includes(game))
+        }) }, icon('add'), el('span', {}, label))
     }))
     $('search').addEventListener('input', (event) => update(() => (state.query = event.target.value)))
     $('hide-known').addEventListener('change', (event) => update(() => (state.hideKnown = event.target.checked)))
+    $('clear').addEventListener('click', () => update(() => (state.picks = [])))
+    $('copy').addEventListener('click', async () => {
+        await navigator.clipboard.writeText(location.href)
+        $('copy').lastElementChild.textContent = 'Link copied'
+    })
     recall()
+    $('loading').hidden = true
     draw()
 }
 

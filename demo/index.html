@@ -34,21 +34,25 @@
                 <a class="link" target="_blank" rel="noreferrer" href="https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek">Board Games Database from BoardGameGeek</a>
                 by threnjen, shared here under
                 <a class="link" target="_blank" rel="noreferrer" href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>.
-                Not affiliated with BoardGameGeek.
+                Not affiliated with BoardGameGeek. It knows games published up to 2021.
             </p>
 
-            <h6>Start with a set</h6>
-            <nav class="wrap" id="starters"></nav>
-
-            <div class="field label prefix border round">
-                <i>search</i>
-                <input id="search" type="search" autocomplete="off" />
-                <label for="search">Add a game you like</label>
-            </div>
-            <p class="small-text" id="suggestions-label"></p>
-            <nav class="wrap" id="suggestions"></nav>
-
-            <h6 id="picks-label">Your picks</h6>
+            <h5>1. Tell it what you like</h5>
+            <article class="border">
+                <div class="field label prefix border round">
+                    <i>search</i>
+                    <input id="search" type="search" autocomplete="off" />
+                    <label for="search">Type the name of a game you like</label>
+                </div>
+                <p class="small-text" id="suggestions-label"></p>
+                <nav class="wrap" id="suggestions"></nav>
+                <p class="small-text">Or add a whole set at once:</p>
+                <nav class="wrap" id="starters"></nav>
+            </article>
+            <nav>
+                <h6 class="max" id="picks-label">Your picks</h6>
+                <button class="transparent small" id="clear" hidden><i>delete</i><span>Clear picks</span></button>
+            </nav>
             <nav class="wrap" id="picks"></nav>
             <details id="hidden-box" hidden>
                 <summary id="hidden-label"></summary>
@@ -57,8 +61,9 @@
 
             <div id="results" hidden>
                 <div class="space"></div>
+                <h5>2. Your recommendations</h5>
+                <p id="glance"></p>
                 <article class="secondary-container" id="gem" hidden></article>
-                <h5>Recommended for you</h5>
                 <nav>
                     <label class="switch">
                         <input id="hide-known" type="checkbox" />
@@ -67,8 +72,17 @@
                     <span>Hide the 100 best-known games</span>
                 </nav>
                 <ul class="list border" id="recommendations"></ul>
+                <p class="small-text" id="status"></p>
+
+                <div class="space"></div>
+                <h5>3. Your shortlist</h5>
+                <p class="small-text" id="saved-label"></p>
+                <nav class="wrap" id="saved"></nav>
+                <nav>
+                    <button class="border small" id="copy"><i>link</i><span>Copy a link to this page</span></button>
+                </nav>
             </div>
-            <p id="status">Loading the model...</p>
+            <p id="loading">Loading the model...</p>
             <div class="large-space"></div>
             <!-- the portfolio's footer: the same line and the same three links -->
             <nav id="footer">

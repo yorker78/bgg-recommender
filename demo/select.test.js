@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { byRatings, closestPick, hiddenGem, isCrude, search } from './select.js'
+import { byRatings, closestPick, glance, hiddenGem, isCrude, search } from './select.js'
 
 const games = {
     name: ['Catan', 'Catan Big Box', 'Obscure Gem', 'Bad Obscure', 'Catacombs', 'Other Gem'],
@@ -30,12 +30,22 @@ test('closestPick finds the pick pointing the same way as the game', () => {
     assert.equal(closestPick(unit, 2, 2, [0, 1]), 1)
 })
 
-test('hiddenGem skips well-known, poorly rated, hidden and same-series games', () => {
+test('hiddenGem skips well-known, poorly rated and hidden games, and editions of well-known games', () => {
     const order = [1, 0, 3, 2, 5, 4] // best match first
-    const rank = [0, 1, 3, 5, 2, 4] // position in byRatings
+    const byRating = byRatings(ratings)
+    const rank = [0, 1, 3, 5, 2, 4] // position in byRating
     const options = { beyond: 1, average: 7 }
-    // 1 is another Catan, 3 is rated 5.0, so the first that qualifies is 2
-    assert.equal(hiddenGem(order, games, rank, [0], new Set([0]), options), 2)
-    assert.equal(hiddenGem(order, games, rank, [0], new Set([0, 2]), options), 5)
-    assert.equal(hiddenGem(order, games, rank, [0], new Set([0, 2, 5, 4]), options), undefined)
+    // nothing of Catan's is picked, yet 1 is a Catan box and Catan is the best-known game; 3 is rated 5.0
+    assert.equal(hiddenGem(order, games, byRating, rank, [4], new Set([4]), options), 2)
+    assert.equal(hiddenGem(order, games, byRating, rank, [4], new Set([4, 2]), options), 5)
+    assert.equal(hiddenGem(order, games, byRating, rank, [4], new Set([4, 2, 5]), options), undefined)
+    // a family in common with a pick rules a game out too: 2 is passed over for 4
+    const withFamilies = { ...games, family: [null, null, 'Gems', null, null, 'Gems'] }
+    assert.equal(hiddenGem(order, withFamilies, byRating, rank, [5], new Set([5]), options), 4)
+})
+
+test('glance sums up the picks, and says nothing when the export has no details', () => {
+    assert.equal(glance(games, [0, 1]), '')
+    const detailed = { ...games, weight: [2, 3, 0, 0, 0, 0], minutes: [60, 93, 0, 0, 0, 0], categories: { Strategy: [1, 1, 0, 0, 0, 0], Family: [1, 0, 0, 0, 0, 0] } }
+    assert.equal(glance(detailed, [0, 1]), 'Your picks at a glance: mostly strategy and family games, medium complexity (2.5 of 5), around 75 minutes a game.')
 })
