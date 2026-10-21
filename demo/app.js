@@ -3,8 +3,7 @@
 import { scoreAll, topGames, unitVectors, userVector } from './recommend.js'
 import { byRatings, closestPick, glance, hiddenGem, isCrude, search } from './select.js'
 
-// set when the repository is public
-const CODE_URL = ''
+const CODE_URL = 'https://github.com/yorker78/bgg-recommender'
 const STARTERS = {
     'Modern classics': ['Catan', 'Ticket to Ride', 'Carcassonne', 'Pandemic', '7 Wonders', 'Splendor'],
     'Childhood favourites': ['Monopoly', 'Scrabble', 'Clue', 'Risk', 'Battleship', 'UNO'],
